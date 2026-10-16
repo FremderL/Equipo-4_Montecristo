@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="MonteCristo: un casino social para jugar con amigos en salas privadas, solo con fichas virtuales.">
+  <title>MonteCristo · Casino social</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="app.js" defer></script>
+</head>
+<body data-pagina="inicio">
+  <div class="app-layout">
+    <header class="cabecera">
+      <div class="contenedor cabecera__interior">
+        <a class="marca" href="index.html" aria-label="MonteCristo, página de inicio">
+          <span class="marca__sello" aria-hidden="true">M</span>
+          <span>MonteCristo</span>
+        </a>
+        <div class="cabecera__acciones">
+          <span class="badge badge--dorado">Salas privadas · hasta 6 personas</span>
+          <div class="estado-conexion" id="estado-conexion" data-estado="conectando" role="status" aria-live="polite">
+            <span class="estado-conexion__punto" aria-hidden="true"></span>
+            <span class="estado-conexion__texto">Conectando…</span>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <main class="contenedor contenido" id="contenido">
+      <section class="hero-grid" aria-labelledby="titulo-principal">
+        <div class="hero-copy">
+          <p class="eyebrow"><span class="eyebrow__marca" aria-hidden="true"></span> Tu mesa, tus amigos</p>
+          <h1 class="hero__titulo" id="titulo-principal">Monte<span class="hero__titulo-acento">Cristo</span></h1>
+          <p class="hero__descripcion">Un casino social para jugar con amigos en salas de hasta seis personas. Elige entre cinco juegos, comparte la mesa y disfruta con fichas virtuales; aquí no hay dinero real.</p>
+
+          <ul class="hero__datos" aria-label="Características de MonteCristo">
+            <li><span class="hero__dato-icono" aria-hidden="true">6</span> Hasta 6 personas</li>
+            <li><span class="hero__dato-icono" aria-hidden="true">5</span> Juegos clásicos</li>
+            <li><span class="hero__dato-icono" aria-hidden="true">✦</span> Fichas virtuales</li>
+          </ul>
+
+          <section class="tarjeta panel-acceso" aria-labelledby="titulo-acceso">
+            <div class="panel-acceso__cabecera">
+              <div>
+                <p class="panel-acceso__subtitulo">Una mesa te espera</p>
+                <h2 class="panel-acceso__titulo" id="titulo-acceso">¿Cómo quieres jugar?</h2>
+              </div>
+              <span class="badge badge--menta">Sin depósitos</span>
+            </div>
+
+            <button class="btn btn--primario btn--grande" id="crear-sala" type="button">
+              Crear sala <span class="btn__flecha" aria-hidden="true">→</span>
+            </button>
+
+            <div class="panel-acceso__separador" aria-hidden="true">o entra a una sala</div>
+
+            <form class="codigo-form" id="formulario-codigo" action="perfil.html" method="get" novalidate>
+              <input type="hidden" name="accion" value="entrar">
+              <div class="campo">
+                <label for="codigo-sala">Entrar con código</label>
+                <input
+                  id="codigo-sala"
+                  name="codigo"
+                  type="text"
+                  inputmode="text"
+                  autocomplete="off"
+                  autocapitalize="characters"
+                  maxlength="5"
+                  minlength="5"
+                  pattern="[A-Za-z0-9]{5}"
+                  placeholder="K7Q2M"
+                  aria-describedby="codigo-ayuda"
+                  required
+                  spellcheck="false"
+                >
+                <span class="campo__ayuda" id="codigo-ayuda">5 letras o números, sin espacios ni símbolos.</span>
+              </div>
+              <button class="btn btn--secundario" type="submit">Entrar</button>
+            </form>
+            <p class="aviso aviso--peligro mensaje" id="error-inicio" role="alert" aria-live="assertive" hidden></p>
+          </section>
+        </div>
+
+        <figure class="hero-visual">
+          <img src="assets/casino-hero.jpg" alt="Salón oscuro y elegante con una mesa de casino verde bajo una luminaria dorada">
+          <span class="hero-visual__sello">Juega en buena compañía</span>
+          <figcaption class="hero-visual__caption">
+            <strong>La emoción de la mesa, sin salir de casa.</strong>
+            <span>Comparte un código de cinco caracteres e invita a tu grupo.</span>
+          </figcaption>
+        </figure>
+      </section>
+
+      <section class="juegos" aria-labelledby="titulo-juegos">
+        <div class="juegos__cabecera">
+          <div>
+            <p class="eyebrow"><span class="eyebrow__marca" aria-hidden="true"></span> Elige tu próxima partida</p>
+            <h2 id="titulo-juegos">Cinco juegos. Una sola mesa.</h2>
+          </div>
+          <p>Desde una ronda rápida hasta una mano de póker: elige tu favorito al crear la sala.</p>
+        </div>
+
+        <div class="juegos__rejilla">
+          <article class="tarjeta juego-card">
+            <div class="juego-card__imagen">
+              <img src="assets/coin-lounge.jpg" alt="Ficha redonda dorada sobre un paño verde de casino" loading="lazy">
+            </div>
+            <div class="juego-card__contenido">
+              <h3>Cara o Cruz</h3>
+              <p>Elige un lado y disfruta una ronda rápida con todo el grupo.</p>
+            </div>
+          </article>
+
+          <article class="tarjeta juego-card">
+            <div class="juego-card__imagen">
+              <img src="assets/dice-lounge.jpg" alt="Dados sobre una mesa verde de casino" loading="lazy">
+            </div>
+            <div class="juego-card__contenido">
+              <h3>Dados</h3>
+              <p>Apuesta a bajo, alto o a un número exacto del uno al seis.</p>
+            </div>
+          </article>
+
+          <article class="tarjeta juego-card">
+            <div class="juego-card__imagen">
+              <img src="assets/roulette-lounge.jpg" alt="Ruleta europea con paño verde y casillas numeradas" loading="lazy">
+            </div>
+            <div class="juego-card__contenido">
+              <h3>Ruleta</h3>
+              <p>Una ruleta europea clásica con casillas del cero al treinta y seis.</p>
+            </div>
+          </article>
+
+          <article class="tarjeta juego-card">
+            <div class="juego-card__imagen">
+              <img src="assets/blackjack-lounge.jpg" alt="Cartas y fichas sobre una mesa de blackjack" loading="lazy">
+            </div>
+            <div class="juego-card__contenido">
+              <h3>Blackjack / 21</h3>
+              <p>Juega tu mano, toma tus decisiones y acércate a veintiuno.</p>
+            </div>
+          </article>
+
+          <article class="tarjeta juego-card">
+            <div class="juego-card__imagen">
+              <img src="assets/poker-lounge.jpg" alt="Mesa preparada para una partida de Texas Hold'em" loading="lazy">
+            </div>
+            <div class="juego-card__contenido">
+              <h3>Texas Hold’em</h3>
+              <p>Lee la mesa y compite con tus amigos en cada mano.</p>
+            </div>
+          </article>
+        </div>
+      </section>
+    </main>
+
+    <footer class="pie">
+      <div class="contenedor pie__interior">
+        <p class="pie__aviso">
+          <span class="pie__icono" aria-hidden="true">i</span>
+          <span><strong>Fichas 100 % virtuales; no hay dinero real.</strong> Sin depósitos ni premios canjeables. MonteCristo es una experiencia social para mayores de 18 años.</span>
+        </p>
+        <span class="pie__edad">Solo mayores de 18 años</span>
+      </div>
+    </footer>
+  </div>
+
+  <div class="solo-escritorio" role="region" aria-label="Requisito de pantalla">
+    <section class="solo-escritorio__tarjeta">
+      <a class="marca" href="index.html" aria-label="MonteCristo, página de inicio">
+        <span class="marca__sello" aria-hidden="true">M</span>
+        <span>MonteCristo</span>
+      </a>
+      <span class="solo-escritorio__titulo">Experiencia diseñada para escritorio</span>
+      <p class="solo-escritorio__texto">Abre esta página en una computadora de escritorio o laptop con una ventana de al menos 1024 px de ancho.</p>
+      <footer class="pie solo-escritorio__pie">
+        <div class="pie__interior">
+          <p class="pie__aviso">
+            <span class="pie__icono" aria-hidden="true">i</span>
+            <span><strong>Fichas 100 % virtuales; no hay dinero real.</strong> Sin depósitos ni premios canjeables. Solo para mayores de 18 años.</span>
+          </p>
+          <span class="pie__edad">Solo mayores de 18 años</span>
+        </div>
+      </footer>
+    </section>
+  </div>
+</body>
+</html>
