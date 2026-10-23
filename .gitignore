@@ -1,0 +1,7 @@
+# Dependencias
+node_modules/
+
+# Base de datos local (el archivo vive en la propia computadora)
+data/*.db
+data/*.db-wal
+data/*.db-shm
