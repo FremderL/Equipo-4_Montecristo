@@ -1,0 +1,13 @@
+# Dependencias: se reinstalan durante el build
+node_modules/
+
+# Base de datos SQLite local (no subir el archivo .db)
+data/*.db
+data/*.db-wal
+data/*.db-shm
+
+# Control de versiones y basura del sistema
+.git/
+.gitignore
+*.log
+.DS_Store

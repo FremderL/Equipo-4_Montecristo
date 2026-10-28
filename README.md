@@ -16,13 +16,14 @@ en tiempo real. Una persona crea una sala, comparte un enlace o un código de 5 
 3. [Tecnologías](#tecnologías)
 4. [Requisitos](#requisitos)
 5. [Instalación y ejecución](#instalación-y-ejecución)
-6. [Cómo jugar con otras personas](#cómo-jugar-con-otras-personas)
-7. [Scripts disponibles](#scripts-disponibles)
-8. [Variables de entorno](#variables-de-entorno)
-9. [Estructura del proyecto](#estructura-del-proyecto)
-10. [Documentación](#documentación)
-11. [Solución de problemas](#solución-de-problemas)
-12. [Cómo colaborar](#cómo-colaborar)
+6. [Despliegue en Render](#despliegue-en-render)
+7. [Cómo jugar con otras personas](#cómo-jugar-con-otras-personas)
+8. [Scripts disponibles](#scripts-disponibles)
+9. [Variables de entorno](#variables-de-entorno)
+10. [Estructura del proyecto](#estructura-del-proyecto)
+11. [Documentación](#documentación)
+12. [Solución de problemas](#solución-de-problemas)
+13. [Cómo colaborar](#cómo-colaborar)
 
 ---
 
@@ -147,6 +148,48 @@ Para detener el servidor pulsa `Ctrl + C` en la terminal.
 
 ---
 
+## Despliegue en Render
+
+La v1 guarda el estado en memoria y no requiere base de datos gestionada. El repositorio incluye
+`render.yaml`, que describe el **Web Service Node.js** que Render crea al conectar el repositorio.
+
+### Cómo desplegar
+
+1. Entra en [render.com](https://render.com) → **New** → **Blueprint**.
+2. Conecta el repositorio `FremderL/Equipo-4_Montecristo`.
+3. Render detecta `render.yaml` y crea el servicio **montecristo** (plan `free`).
+4. Espera a que el *build* termine y el *health check* `/health` devuelva `200`.
+5. Abre la URL pública `https://<service>.onrender.com`.
+
+### Recursos del blueprint
+
+| Recurso | Archivo | Descripción |
+| --- | --- | --- |
+| Web Service | `render.yaml` | Express + Socket.IO: interfaz, API y WebSocket en un solo proceso. |
+| Ignora build | `.renderignore` | Excluye `node_modules`, `.git` y `.db` del bundle. |
+| Node | `.nvmrc` | Fija Node 20 LTS (compatible con `better-sqlite3` v11). |
+
+### Variables de entorno
+
+Render asigna `PORT` automáticamente. El blueprint define `NODE_ENV=production` y `MAX_SALAS=50`;
+`DB_FILE` queda en `data/casino.db` (efímero en plan free).
+
+> **Free vs pago:** el plan `free` (Hobby) apaga la instancia tras 15 min sin tráfico y no admite
+> discos persistentes. La v1 funciona así porque guarda el estado en memoria. Para producción
+> (plan `starter`/`profesional`), activa el disco persistente en `/data` con `DB_FILE=/data/casino.db`;
+> ver [`docs/05-despliegue-render.md`](docs/05-despliegue-render.md).
+
+### Evidencia del ticket
+
+1. Captura del dashboard de Render con el servicio **montecristo** en **Live**.
+2. Captura del log de *deploy* (`npm ci` → `db:migrar` → arranque) en verde.
+3. La URL pública del servicio.
+4. Captura de `GET /health` devolviendo `{"ok":true}`.
+5. Captura de `npm test` con las pruebas verdes.
+6. (Opcional) Captura de la sala creada en el navegador.
+
+---
+
 ## Cómo jugar con otras personas
 
 | Escenario | Cómo hacerlo |
@@ -167,6 +210,7 @@ Para detener el servidor pulsa `Ctrl + C` en la terminal.
 | `npm start` | Inicia el servidor en el puerto 3000 (o el de `PORT`) |
 | `npm run dev` | Igual que `npm start`, pensado para desarrollo |
 | `npm test` | Ejecuta las pruebas de reglas, pagos y validaciones |
+| `npm run db:migrar` | Aplica `db/schema.sql` sobre SQLite (idempotente; lo usa Render al arrancar) |
 | `npm run lint` | Revisa el estilo del código con ESLint |
 
 ---
@@ -177,21 +221,24 @@ Todas son **opcionales**; sin configurar nada el proyecto funciona.
 
 | Variable | Valor por defecto | Descripción |
 | --- | --- | --- |
-| `PORT` | `3000` | Puerto en el que escucha el servidor |
-| `GUARDAR_ESTADO` | `false` | Si vale `true`, guarda `data/estado.json` al apagar y lo carga al arrancar |
-| `MAX_SALAS` | `50` | Máximo de salas simultáneas |
-| `LOG_NIVEL` | `info` | Nivel de detalle de los registros en consola |
+| `PORT` | `3000` | Puerto en el que escucha el servidor (Render lo asigna automáticamente) |
+| `HOST` | `0.0.0.0` | Interfaz donde escucha; `0.0.0.0` la deja disponible para internet |
+| `MAX_SALAS` | `50` | Máximo de salas activas simultáneas |
+| `DB_FILE` | `data/casino.db` | Archivo SQLite usado por `lib/db.js` y `npm run db:migrar` |
+
+> `GUARDAR_ESTADO` y `LOG_NIVEL` aparecen en DOC-03 como **proyectadas**; el servidor de la
+> v1 todavía no las lee. `PORT`, `HOST`, `MAX_SALAS` y `DB_FILE` sí las usa el código.
 
 Ejemplo en Linux/macOS:
 
 ```bash
-PORT=4000 GUARDAR_ESTADO=true npm start
+PORT=4000 MAX_SALAS=50 npm start
 ```
 
 En Windows (PowerShell):
 
 ```powershell
-$env:PORT=4000; $env:GUARDAR_ESTADO="true"; npm start
+$env:PORT=4000; $env:MAX_SALAS="50"; npm start
 ```
 
 ---
@@ -202,6 +249,9 @@ $env:PORT=4000; $env:GUARDAR_ESTADO="true"; npm start
 montecristo/
 ├─ server.js              # Express + Socket.IO: arranque y eventos
 ├─ package.json
+├─ render.yaml            # Blueprint de Render (Web Service Node.js)
+├─ .nvmrc                 # Node 20 LTS (Render)
+├─ .renderignore          # lo que Render NO sube al build
 ├─ public/                # todo lo que ve el navegador
 │  ├─ index.html
 │  ├─ styles.css
@@ -213,7 +263,7 @@ montecristo/
 │  ├─ snapshot.js         # data/estado.json
 │  └─ juegos/             # coinflip · dice · roulette · blackjack · poker
 ├─ data/                  # snapshot JSON (opcional)
-├─ docs/                  # documentación del proyecto
+├─ docs/                  # documentación del proyecto (01–05)
 └─ tests/                 # pruebas con los casos de DOC-02
 ```
 
@@ -227,6 +277,7 @@ montecristo/
 | [`docs/02-reglas-y-pagos.md`](docs/02-reglas-y-pagos.md) | Reglas y multiplicadores de cada juego; números oficiales para el código y las pruebas. |
 | [`docs/03-modelo-de-datos.md`](docs/03-modelo-de-datos.md) | Modelo entidad–relación: jugadores, salas, partidas y apuestas, con el diagrama y el DDL. |
 | [`docs/04-arquitectura.md`](docs/04-arquitectura.md) | Comunicación entre navegador, servidor y datos; endpoints y eventos de Socket.IO. |
+| [`docs/05-despliegue-render.md`](docs/05-despliegue-render.md) | **Despliegue**: recursos de Render, planes, variables y checklist de evidencia. |
 
 ---
 
