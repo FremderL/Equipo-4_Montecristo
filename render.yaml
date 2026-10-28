@@ -1,0 +1,34 @@
+# =============================================================================
+# Render Blueprint — MonteCristo (Equipo 4)
+# =============================================================================
+# Render detecta este archivo al importar el repositorio (New > Blueprint) y
+# crea el Web Service Node.js que ejecuta la app (interfaz + API + WebSocket).
+#
+# Recursos descritos:
+#   - Web Service "montecristo" (runtime: node, plan: free)
+#   - Build: npm ci (instala dependencias con el lockfile)
+#   - Start: npm run db:migrar && npm start (aplica el schema y arranca)
+#   - Health check: /health -> {"ok":true}
+#   - autoDeploy en cada push a main
+#
+# La v1 guarda el estado en memoria del proceso, así que no necesita base de
+# datos gestionada ni disco persistente para funcionar. Para plan pago con
+# disco persistente, ver la variante "paid" en docs/05-despliegue-render.md.
+# =============================================================================
+
+services:
+  - type: web
+    name: montecristo
+    runtime: node
+    plan: free
+    buildCommand: npm ci
+    startCommand: npm run db:migrar && npm start
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: MAX_SALAS
+        value: "50"
+    # PORT la asigna Render automáticamente; HOST queda en 0.0.0.0 (server.js).
+    # DB_FILE queda en data/casino.db: en plan free el filesystem es efímero.
