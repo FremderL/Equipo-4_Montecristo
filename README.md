@@ -259,6 +259,7 @@ montecristo/
 ├─ lib/
 │  ├─ reglas.js           # constantes y tabla de pagos (DOC-02)
 │  ├─ rng.js              # generador aleatorio con semilla
+│  ├─ historial.js        # historial_rondas: fila por jugador y ronda terminada
 │  ├─ salas.js            # estado en memoria (DOC-03)
 │  ├─ snapshot.js         # data/estado.json
 │  └─ juegos/             # coinflip · dice · roulette · blackjack · poker

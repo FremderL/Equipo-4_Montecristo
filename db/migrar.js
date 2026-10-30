@@ -5,7 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const db = require('../lib/db.js');
 
-const TABLAS = ['jugadores', 'salas', 'partidas', 'apuestas'];
+const TABLAS = ['jugadores', 'salas', 'partidas', 'apuestas', 'historial_rondas'];
 
 function tablasExistentes() {
   const marcadores = TABLAS.map(() => '?').join(', ');

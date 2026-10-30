@@ -91,6 +91,34 @@ Una fila por jugador y ronda. Es el detalle que permite auditar cada ficha.
 | `resultado` | ENUM | | `gana` · `pierde` · `empate` | `gana` |
 | `creada_en` | TIMESTAMP | | Cuándo se confirmó | `2026-10-14T20:41:10Z` |
 
+### `historial_rondas`
+
+Una fila por **jugador y ronda terminada**. Es la tabla del historial y de las estadísticas:
+tiene sala, juego, jugador, apuesta, resultado y fecha en la misma fila, así que se consulta sin
+cruzar `partidas` ni `apuestas`.
+
+| Campo | Tipo | Clave | Descripción | Ejemplo |
+| --- | --- | --- | --- | --- |
+| `id` | UUID / string | **PK** | Identificador de la fila | `h_5d20…` |
+| `sala_codigo` | CHAR(5) | | Código de la sala donde se jugó (foto del momento) | `K7Q2M` |
+| `juego` | ENUM | | `coinflip` · `dice` · `roulette` · `blackjack` · `poker` | `roulette` |
+| `numero_ronda` | INTEGER | | Consecutivo dentro de la sala, empieza en 1 | `7` |
+| `jugador_id` | UUID / string | | Identificador del jugador | `p_7f3a91` |
+| `jugador_nombre` | VARCHAR(24) | | Nombre visible en ese momento | `Ana` |
+| `apuesta` | INTEGER | | Fichas apostadas (igual que `apuestas.monto`) | `100` |
+| `opcion` | VARCHAR(16) | | Opción jugada: `rojo`, `n:17`, `alto`, … | `rojo` |
+| `resultado` | ENUM | | `gana` · `pierde` · `empate` | `gana` |
+| `pago` | INTEGER | | Fichas acreditadas al liquidar | `200` |
+| `fecha` | TIMESTAMP | | Cuándo terminó la ronda | `2026-10-14 20:41:35` |
+
+- Es **append-only**: se escribe una sola vez al terminar la ronda (fase `resultados`) con
+  `registrarRondaTerminada()` de `lib/historial.js`, y no se modifica después.
+- **No lleva claves foráneas a propósito.** Guarda el código de sala y el nombre del jugador como
+  foto del momento para que el historial sobreviva cuando la sala se cierre o el jugador se
+  elimine (en las tablas activas ambos se borran con `CASCADE`).
+- `UNIQUE (sala_codigo, numero_ronda, jugador_id)` impide duplicar una ronda: repetir la llamada
+  devuelve la fila ya guardada en lugar de insertar otra.
+
 ---
 
 ## 3. Relaciones y cardinalidad
@@ -108,6 +136,8 @@ Reglas que el diagrama no dibuja pero el código debe cumplir:
 - `asiento` es único dentro de la sala (1…6).
 - `codigo` es único entre salas activas.
 - Solo puede haber **una apuesta por `jugador_id` + `partida_id`**.
+- `historial_rondas` queda fuera del diagrama: no tiene claves foráneas para no perder el
+  historial cuando se limpian salas o jugadores.
 
 ---
 
@@ -200,6 +230,24 @@ CREATE TABLE apuestas (
   creada_en      TIMESTAMPTZ   NOT NULL DEFAULT now(),
   UNIQUE (partida_id, jugador_id)
 );
+
+-- Implementada en db/schema.sql como tabla append-only del historial.
+-- Sin claves foráneas: guarda la foto de sala y jugador para no perder el
+-- historial cuando se borren las filas activas.
+CREATE TABLE historial_rondas (
+  id              TEXT PRIMARY KEY,
+  sala_codigo     CHAR(5)     NOT NULL,
+  juego           TEXT        NOT NULL CHECK (juego IN ('coinflip','dice','roulette','blackjack','poker')),
+  numero_ronda    INTEGER     NOT NULL CHECK (numero_ronda >= 1),
+  jugador_id      TEXT        NOT NULL,
+  jugador_nombre  VARCHAR(24) NOT NULL,
+  apuesta         INTEGER     NOT NULL CHECK (apuesta >= 10),
+  opcion          VARCHAR(16) NOT NULL,
+  resultado       TEXT        NOT NULL CHECK (resultado IN ('gana','pierde','empate')),
+  pago            INTEGER     NOT NULL DEFAULT 0 CHECK (pago >= 0),
+  fecha           TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (sala_codigo, numero_ronda, jugador_id)
+);
 ```
 
 ---
@@ -210,6 +258,10 @@ CREATE TABLE apuestas (
 - [ ] La relación `salas → jugadores` respeta el máximo de **6** y rechaza el séptimo ingreso.
 - [ ] Cada ronda crea **una** fila en `partidas` y **una** en `apuestas` por jugador que apostó.
 - [ ] `multiplicador` y `pago` se guardan en la apuesta y coinciden con `02-reglas-y-pagos.md`.
+- [ ] Cada ronda terminada deja **una fila por jugador** en `historial_rondas` con sala, juego,
+      jugador, apuesta, resultado y fecha.
+- [ ] Registrar dos veces la misma ronda **no duplica** filas en `historial_rondas`.
+- [ ] El historial y las estadísticas de un jugador se consultan solo con `historial_rondas`.
 - [ ] Al salir un jugador sin lanzar la ronda, su apuesta desaparece y su saldo vuelve al valor previo.
 - [ ] El snapshot JSON (si está activo) recrea salas, jugadores y saldos al reiniciar.
 - [ ] El DDL de la sección 5 se ejecuta sin errores si en el futuro se activa PostgreSQL.
