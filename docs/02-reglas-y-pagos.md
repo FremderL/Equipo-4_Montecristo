@@ -306,3 +306,43 @@ Las pruebas deben usar **exactamente** estos valores. Cada fila es un caso:
 5. La ronda no fue liquidada antes (idempotencia: una liquidación por ronda y por jugador).
 6. La opción elegida existe en el juego (`cara`/`cruz`, `bajo`/`alto`/`n:1`…`n:6`, `n:0`…`n:36`, etc.).
 7. Solo el anfitrión puede lanzar, repartir o abrir la siguiente ronda.
+8. La acción llega **antes** de que venza el reloj del turno (ver §11).
+
+---
+
+## 11. Reloj de turno y decisión automática del servidor
+
+Implementado en `lib/turno.js` y orquestado por `server.js`. Regla del ticket: **ninguna partida
+puede quedarse atorada esperando a una persona**. Cada turno nace con su límite y, si el jugador
+no manda nada, el servidor decide por él y la vuelta continúa.
+
+| Juego | Límite por turno | Qué juega el servidor si nadie responde |
+| --- | ---: | --- |
+| **Blackjack** | `TIEMPO_TURNO_BLACKJACK_MS` = 25 s | `stand` (**se planta**) |
+| **Texas Hold'em** | `TIEMPO_TURNO_POKER_MS` = 30 s | `check` (**no apuesta**) si no hay fichas por igualar; si las hay, `fold` (**se retira**) |
+| Cara o Cruz · Dados · Ruleta | sin reloj | nada: todos apuestan a la vez en la fase `apuestas` |
+
+**Cómo cuenta el reloj.** El servidor emite `turno` con `{ jugadorId, deadline }`, donde `deadline`
+es un instante absoluto (`Date.now() + límite`). La interfaz dibuja la cuenta regresiva con ese
+valor; el servidor nunca le pregunta al cliente si el tiempo se agotó.
+
+**Casos que resuelve el servidor.**
+
+| Situación | Decisión |
+| --- | --- |
+| Vence el reloj | Aplica la acción automática de la tabla, avisa con `turno_automatico` y pasa al siguiente jugador |
+| La acción llega **después** del `deadline` | Se rechaza (`TURNO_VENCIDO`); vale la decisión automática que el servidor ya tomó |
+| El jugador sale o se desconecta en su turno | Misma decisión automática con `motivo: 'abandono'`; la mesa sigue sin él |
+| Juega alguien que no está en turno | Se rechaza (`TURNO_AJENO`) y el reloj del jugador actual no se toca |
+| Acción inexistente en ese juego | Se rechaza (`ACCION_INVALIDA`). También se aceptan los nombres en español: `pedir`→`hit`, `plantarse`→`stand`, `doblar`→`double`, `dividir`→`split`, `pasar`→`check`, `igualar`→`call`, `subir`→`raise`, `retirarse`→`fold` |
+| Todos resolvieron su turno | Se cierra la mano y la sala pasa a `resultados` |
+| Quien **no apuesta** en la fase `apuestas` | No entra al orden de turnos: el servidor nunca apuesta por él, la ronda se juega sin esa persona |
+| Nueva ronda, sala vacía o apagado del servidor | Se cancelan todos los relojes y sus temporizadores |
+
+**Idempotencia.** Cada turno nuevo incrementa una *generación* interna del reloj: un temporizador
+viejo que se dispare tarde se ignora, así que el servidor nunca decide dos veces sobre la misma
+mano ni sobre el jugador equivocado.
+
+**Ajuste del límite.** Los valores oficiales son los de §2. Para probar la mesa sin esperar 25 s se
+pueden acortar con las variables de entorno `TIEMPO_TURNO_BLACKJACK_MS` y `TIEMPO_TURNO_POKER_MS`
+(por ejemplo `TIEMPO_TURNO_BLACKJACK_MS=5000 npm start`); sin esas variables rigen 25 s y 30 s.
