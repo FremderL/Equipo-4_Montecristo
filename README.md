@@ -31,6 +31,9 @@ en tiempo real. Una persona crea una sala, comparte un enlace o un código de 5 
 
 - **Salas privadas de hasta 6 jugadores** con enlace o código de 5 caracteres (ej. `K7Q2M`).
 - **Estado en tiempo real**: cada apuesta, carta, turno y resultado se ve al instante en la sala.
+- **Reloj de turno**: 25 s en blackjack y 30 s en póker. Si nadie responde, **el servidor decide por
+  ese jugador** (se planta, o pasa/se retira en póker) y la partida sigue: ninguna mesa se queda
+  atorada esperando a una persona.
 - **Servidor autoritativo**: los resultados (moneda, dado, ruleta y cartas) los genera y liquida el
   servidor; el navegador solo los muestra.
 - **Fichas virtuales**: cada jugador empieza con **1.000 fichas**, la apuesta mínima es **10** y los
@@ -136,6 +139,20 @@ Entra a **http://localhost:3000** en tu navegador.
 3. Copia el enlace o el código de 5 caracteres y compártelo.
 4. Pulsa **Lanzar** (o **Repartir**) cuando todas las apuestas estén listas.
 
+### 6. Comprueba el reloj de turno
+
+En blackjack y póker cada turno tiene límite (25 s y 30 s). Si el jugador no manda nada, el
+servidor decide por él y la partida continúa. Para verlo sin esperar medio minuto, acorta los
+relojes con variables de entorno:
+
+```bash
+TIEMPO_TURNO_BLACKJACK_MS=5000 TIEMPO_TURNO_POKER_MS=5000 npm start
+```
+
+Con la sala en fase `jugando`, deja pasar los 5 s sin tocar nada: llega el evento
+`turno_automatico` (blackjack: `stand` · póker: `check` o `fold`), el turno pasa al siguiente
+jugador y `estado_sala` trae la acción marcada como `automatica: true`.
+
 ### Modo desarrollo
 
 ```bash
@@ -225,9 +242,12 @@ Todas son **opcionales**; sin configurar nada el proyecto funciona.
 | `HOST` | `0.0.0.0` | Interfaz donde escucha; `0.0.0.0` la deja disponible para internet |
 | `MAX_SALAS` | `50` | Máximo de salas activas simultáneas |
 | `DB_FILE` | `data/casino.db` | Archivo SQLite usado por `lib/db.js` y `npm run db:migrar` |
+| `TIEMPO_TURNO_BLACKJACK_MS` | `25000` | Límite del turno en blackjack; al vencer, el servidor planta la mano |
+| `TIEMPO_TURNO_POKER_MS` | `30000` | Límite del turno en póker; al vencer, el servidor pasa o se retira |
 
 > `GUARDAR_ESTADO` y `LOG_NIVEL` aparecen en DOC-03 como **proyectadas**; el servidor de la
-> v1 todavía no las lee. `PORT`, `HOST`, `MAX_SALAS` y `DB_FILE` sí las usa el código.
+> v1 todavía no las lee. `PORT`, `HOST`, `MAX_SALAS`, `DB_FILE` y los dos `TIEMPO_TURNO_*` sí las
+> usa el código.
 
 Ejemplo en Linux/macOS:
 
@@ -259,6 +279,7 @@ montecristo/
 ├─ lib/
 │  ├─ reglas.js           # constantes y tabla de pagos (DOC-02)
 │  ├─ rng.js              # generador aleatorio con semilla
+│  ├─ turno.js            # reloj de turno: decide por quien no responde
 │  ├─ salas.js            # estado en memoria (DOC-03)
 │  ├─ snapshot.js         # data/estado.json
 │  └─ juegos/             # coinflip · dice · roulette · blackjack · poker
@@ -292,6 +313,7 @@ montecristo/
 | Mis amigos no pueden entrar desde otra red | Necesitas exponer el puerto (ngrok o similar) o desplegar el servidor en un hosting. |
 | El navegador muestra una versión vieja de la página | Recarga con `Ctrl + Shift + R` (Windows/Linux) o `Cmd + Shift + R` (macOS). |
 | Las fichas volvieron a 1.000 al reiniciar | Es el comportamiento por defecto; activa `GUARDAR_ESTADO=true` para conservarlas. |
+| La mesa se queda esperando a alguien que no responde | No debería: a los 25 s (blackjack) o 30 s (póker) el servidor juega por esa persona y sigue. Para comprobarlo rápido arranca con `TIEMPO_TURNO_BLACKJACK_MS=5000 npm start`. |
 
 Si algo no está en esta lista, abre un *issue* en el repositorio con el sistema operativo, la
 versión de Node (`node -v`) y el mensaje completo del error.

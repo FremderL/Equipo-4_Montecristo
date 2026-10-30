@@ -56,8 +56,10 @@ el resultado de una ronda se genera una sola vez, en el servidor, y todos los cl
 | `crear_sala` | Cualquiera | `{ nombre, avatar, juego }` |
 | `entrar_sala` | Cualquiera | `{ codigo, nombre, avatar }` |
 | `salir_sala` | Jugador | — |
+| `comenzar` | **Anfitrión** | — (abre la fase `apuestas`) |
 | `apostar` | Jugador | `{ monto, opcion }` |
-| `lanzar` | **Anfitrión** | — |
+| `lanzar` | **Anfitrión** | — (juegos rápidos) |
+| `repartir` | **Anfitrión** | — (blackjack y póker: arranca el reloj de turno) |
 | `accion_blackjack` | Jugador en turno | `{ accion: 'hit' \| 'stand' \| 'double' \| 'split' }` |
 | `tomar_seguro` | Jugador (si la casa muestra As) | — |
 | `accion_poker` | Jugador en turno | `{ accion: 'fold' \| 'check' \| 'call' \| 'raise', monto }` |
@@ -71,7 +73,9 @@ el resultado de una ronda se genera una sola vez, en el servidor, y todos los cl
 | `estado_sala` | Al entrar y después de **cada** cambio | Sala completa: jugadores, fichas, apuestas, fase, turno |
 | `ronda_iniciada` | Al lanzar o repartir | `{ numeroRonda, juego }` |
 | `cartas` | Solo al dueño de esas cartas | `{ cartas: [...] }` (nunca las ajenas) |
-| `turno` | En blackjack y póker | `{ jugadorId, deadline }` |
+| `turno` | En blackjack y póker, al empezar cada turno y al cerrar la vuelta | `{ jugadorId, deadline, tiempoMs, segundosRestantes, posicion, total, activo }`; `jugadorId: null` cuando ya no hay turno |
+| `turno_automatico` | Cuando el reloj vence o el jugador se va en su turno | `{ jugadorId, nombre, accion, motivo, mensaje, numeroRonda }` |
+| `apuesta_confirmada` | Al confirmar una apuesta | `{ jugadorId, nombre, monto, opcion }` |
 | `resultado` | Al liquidar | `{ resultado, apuestas: [{ jugadorId, monto, multiplicador, pago }] }` |
 | `chat_mensaje` | Al escribir en el chat | `{ nombre, texto, hora }` |
 | `error` | Cuando una acción se rechaza | `{ mensaje, codigo }` |
@@ -110,14 +114,20 @@ espera la acción (o vence el reloj), aplica la jugada y vuelve a difundir `esta
 
 | Situación | Comportamiento |
 | --- | --- |
-| Turno sin respuesta (blackjack) | A los 25 s el servidor planta al jugador |
-| Turno sin respuesta (póker) | A los 30 s pasa si puede; si no, se retira |
+| Turno sin respuesta (blackjack) | A los 25 s el servidor planta al jugador (`stand`), emite `turno_automatico` y pasa al siguiente |
+| Turno sin respuesta (póker) | A los 30 s pasa (`check`) si no hay fichas por igualar; si las hay, se retira (`fold`) |
+| Acción que llega después del `deadline` | Se rechaza con `TURNO_VENCIDO`: vale la decisión que el servidor ya tomó |
+| Jugador en turno que sale o se desconecta | El servidor aplica la misma decisión automática (`motivo: 'abandono'`) y la mano continúa |
+| Jugador que no apuesta en la fase `apuestas` | No entra al orden de turnos; la ronda se juega sin él (el servidor nunca apuesta por nadie) |
 | Anfitrión inactivo 60 s | El rol de anfitrión migra al siguiente jugador conectado |
 | Desconexión breve | Socket.IO reintenta solo; el jugador conserva asiento y saldo |
 | Salida voluntaria | Se libera el asiento; si la ronda no se lanzó, se reembolsa la apuesta |
-| Sala vacía | Se elimina la sala y se cancelan sus temporizadores |
+| Sala vacía | Se elimina la sala y se cancelan sus temporizadores (relojes de turno incluidos) |
 | Acción inválida | Se responde `ok:false` con mensaje; el estado no cambia |
-| Apagado del servidor | Si el snapshot está activo, guarda `data/estado.json` y lo recupera al arrancar |
+| Apagado del servidor | Se cancelan los relojes de turno; si el snapshot está activo, guarda `data/estado.json` y lo recupera al arrancar |
+
+Los límites de turno viven en `lib/reglas.js` (DOC-02 §2) y el reloj en `lib/turno.js`; se pueden
+acortar con `TIEMPO_TURNO_BLACKJACK_MS` y `TIEMPO_TURNO_POKER_MS` para probar la mesa.
 
 ---
 
@@ -148,6 +158,7 @@ espera la acción (o vence el reloj), aplica la jugada y vuelve a difundir `esta
 ├─ lib/
 │  ├─ reglas.js           # constantes y pagos de DOC-02
 │  ├─ rng.js              # generador con semilla
+│  ├─ turno.js            # reloj de turno y decisión automática del servidor
 │  ├─ salas.js            # estado en memoria (DOC-03)
 │  ├─ snapshot.js         # guardar/cargar data/estado.json
 │  └─ juegos/
@@ -170,6 +181,7 @@ espera la acción (o vence el reloj), aplica la jugada y vuelve a difundir `esta
 - [ ] Ningún cliente recibe cartas de otro jugador antes del showdown o del cierre de la mano.
 - [ ] Dos `lanzar` seguidos solo liquidan una vez (idempotencia).
 - [ ] Una acción inválida devuelve `ok:false` y no altera saldos ni fase.
-- [ ] Los relojes de turno aplican la acción automática a los 25 s (blackjack) y 30 s (póker).
+- [x] Los relojes de turno aplican la acción automática a los 25 s (blackjack) y 30 s (póker) —
+      `lib/turno.js` + `tests/turno.test.js`; también deciden cuando el jugador se va en su turno.
 - [ ] Al perder la conexión y volver, el jugador recupera asiento, saldo y apuesta pendiente.
 - [ ] `GET /health` responde `{ "ok": true }` mientras el servidor está vivo.
