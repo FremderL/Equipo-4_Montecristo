@@ -509,6 +509,14 @@ function atender(socket, ack, funcion) {
 io.on('connection', (socket) => {
   socket.data.codigoSala = null;
 
+  // DOC-04 §3.2: `comenzar`, `lanzar`, `repartir`, `nueva_ronda` y `salir_sala` no
+  // llevan datos. Si el cliente los manda solo con su ack (`socket.emit('lanzar', ack)`),
+  // el paquete se acomoda como (datos = null, ack): así todo evento responde su ack.
+  socket.use((paquete, siguiente) => {
+    if (paquete.length === 2 && typeof paquete[1] === 'function') paquete.splice(1, 0, null);
+    siguiente();
+  });
+
   socket.on('crear_sala', (datos, ack) => {
     try {
       if (salas.size >= MAX_SALAS) {
