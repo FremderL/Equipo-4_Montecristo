@@ -153,6 +153,29 @@ Con la sala en fase `jugando`, deja pasar los 5 s sin tocar nada: llega el event
 `turno_automatico` (blackjack: `stand` · póker: `check` o `fold`), el turno pasa al siguiente
 jugador y `estado_sala` trae la acción marcada como `automatica: true`.
 
+### 7. Juega una ronda de Cara o Cruz
+
+Cara o Cruz ya corre completo en el servidor: cada quien apuesta a `cara` o `cruz`, el anfitrión
+manda `lanzar`, **el servidor** lanza la moneda y paga **×2** a quien acertó. Mientras llega la
+pantalla de la mesa se puede jugar desde la consola del navegador: con el servidor encendido, abre
+http://localhost:3000, pulsa `F12` y pega estas líneas una por una.
+
+```js
+const mesa = io();                                     // la página ya cargó el cliente de Socket.IO
+mesa.onAny((evento, datos) => console.log(evento, datos));
+mesa.emit('crear_sala', { nombre: 'Ana', avatar: '🦊', juego: 'coinflip' }, console.log);
+mesa.emit('comenzar', console.log);                    // fase: apuestas
+mesa.emit('apostar', { monto: 100, opcion: 'cara' }, console.log);   // saldo: 900
+mesa.emit('lanzar', console.log);                      // el servidor lanza y liquida
+mesa.emit('nueva_ronda', console.log);                 // abre la ronda 2
+```
+
+Al lanzar llegan `ronda_iniciada`, `resultado` (`{ resultado: { lado: 'cara' }, apuestas: [...] }`)
+y `estado_sala` en fase `resultados`. Con 100 fichas a `cara` el saldo queda en **1.100** si sale
+cara y en **900** si sale cruz. Un segundo `lanzar` se rechaza con `RONDA_LIQUIDADA` (la ronda se
+paga una sola vez) y solo el anfitrión puede lanzar. Para probar con más gente, abre otra pestaña
+y entra con `mesa.emit('entrar_sala', { codigo: 'K7Q2M', nombre: 'Bruno', avatar: '🐼' }, console.log)`.
+
 ### Modo desarrollo
 
 ```bash
@@ -280,9 +303,10 @@ montecristo/
 │  ├─ reglas.js           # constantes y tabla de pagos (DOC-02)
 │  ├─ rng.js              # generador aleatorio con semilla
 │  ├─ turno.js            # reloj de turno: decide por quien no responde
+│  ├─ lanzamiento.js      # juegos rápidos: lanzar, liquidar y pasar a resultados
 │  ├─ salas.js            # estado en memoria (DOC-03)
 │  ├─ snapshot.js         # data/estado.json
-│  └─ juegos/             # coinflip · dice · roulette · blackjack · poker
+│  └─ juegos/             # coinflip (listo) · dice · roulette · blackjack · poker
 ├─ data/                  # snapshot JSON (opcional)
 ├─ docs/                  # documentación del proyecto (01–05)
 └─ tests/                 # pruebas con los casos de DOC-02
