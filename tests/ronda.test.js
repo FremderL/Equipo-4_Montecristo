@@ -68,3 +68,20 @@ test('sin identidad nadie pasa por anfitrión', () => {
   assert.equal(esAnfitrion({ anfitrionId: 'h' }, undefined), false);
   assert.equal(esAnfitrion({ anfitrionId: null }, null), false, 'una sala sin anfitrión no se lo regala a quien llega sin id');
 });
+
+test('la ronda nueva no arrastra el resultado de la anterior', () => {
+  const sala = {
+    fase: FASES.RESULTADOS,
+    juego: 'coinflip',
+    anfitrionId: 'h',
+    numero_ronda: 1,
+    apuestas: [{ jugadorId: 'h', monto: 100, opcion: 'cara', resultado: 'gana' }],
+    resultado: { lado: 'cara' },
+    semillaRng: 'sd_0123'
+  };
+  abrirNuevaRonda(sala, 'h');
+  assert.equal(sala.resultado, null);
+  assert.equal(sala.semillaRng, null);
+  assert.deepEqual(sala.apuestas, []);
+  assert.equal(sala.numero_ronda, 2);
+});
