@@ -196,6 +196,18 @@ function asignarAnfitrion(sala) {
   sala.anfitrionId = siguiente ? siguiente.id : null;
 }
 
+/** Devuelve la apuesta pendiente de un jugador y la quita de la mesa. */
+function reembolsarApuesta(sala, jugadorId) {
+  const indice = sala.apuestas.findIndex((apuesta) => apuesta.jugadorId === jugadorId);
+  if (indice < 0) return;
+
+  const [apuesta] = sala.apuestas.splice(indice, 1);
+  const jugador = sala.jugadores.get(jugadorId);
+  if (jugador) jugador.fichas += apuesta.monto;
+  sala.apuestasConfirmadas = sala.apuestas.length;
+  sala.bote = Math.max(0, (Number(sala.bote) || 0) - apuesta.monto);
+}
+
 /** Quita al jugador de su sala y limpia la sala si queda vacía. */
 function abandonarSala(socket) {
   const codigo = socket.data.codigoSala;
@@ -210,6 +222,11 @@ function abandonarSala(socket) {
   // Si se va (o se desconecta) cuando le tocaba jugar, el servidor decide por él
   // y la vuelta sigue: la mesa no se queda esperando a quien ya no está.
   if (sala.turnos) sala.turnos.retirarJugador(socket.id, 'abandono');
+
+  // DOC-01 §6 · DOC-04 §5: si la ronda todavía no se lanza (o reparte), la apuesta
+  // de quien sale se reembolsa y desaparece: no se liquida a quien ya no está ni
+  // cuenta como apuesta confirmada para iniciar la ronda.
+  if (fasePermiteAccion(sala.fase, 'apostar')) reembolsarApuesta(sala, socket.id);
 
   sala.jugadores.delete(socket.id);
 
