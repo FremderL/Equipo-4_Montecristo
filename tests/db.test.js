@@ -37,11 +37,11 @@ const debeFallarPor = (accion, tipoDeError) => {
   );
 };
 
-test('las cuatro tablas existen', () => {
+test('las tablas del modelo existen', () => {
   limpiarTablas();
   const filas = db.prepare('SELECT name FROM sqlite_master WHERE type = ?').all('table');
   const tablas = new Set(filas.map((fila) => fila.name));
-  for (const nombre of ['jugadores', 'salas', 'partidas', 'apuestas']) {
+  for (const nombre of ['jugadores', 'salas', 'partidas', 'apuestas', 'historial_rondas']) {
     assert.ok(tablas.has(nombre), `falta la tabla ${nombre}`);
   }
 });

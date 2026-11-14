@@ -65,8 +65,36 @@ CREATE TABLE IF NOT EXISTS apuestas (
   UNIQUE (partida_id, jugador_id)
 );
 
+-- HISTORIAL_RONDAS: una fila por jugador y ronda TERMINADA.
+-- Es la tabla que alimenta el historial y las estadísticas: sala, juego,
+-- jugador, apuesta, resultado y fecha en una sola fila, sin cruzar partidas
+-- y apuestas. Se escribe una única vez al liquidar la ronda (append-only).
+--
+-- A propósito NO lleva claves foráneas: guarda una foto del código de sala y
+-- del nombre del jugador para que el historial sobreviva cuando la sala se
+-- cierre o el jugador se elimine (ambos se borran con CASCADE en las tablas
+-- activas). La función que inserta es registrarRondaTerminada() de
+-- lib/historial.js.
+CREATE TABLE IF NOT EXISTS historial_rondas (
+  id              TEXT PRIMARY KEY,
+  sala_codigo     TEXT NOT NULL,
+  juego           TEXT NOT NULL CHECK (juego IN ('coinflip','dice','roulette','blackjack','poker')),
+  numero_ronda    INTEGER NOT NULL CHECK (numero_ronda >= 1),
+  jugador_id      TEXT NOT NULL,
+  jugador_nombre  TEXT NOT NULL,
+  apuesta         INTEGER NOT NULL CHECK (apuesta >= 10),
+  opcion          TEXT NOT NULL,
+  resultado       TEXT NOT NULL CHECK (resultado IN ('gana','pierde','empate')),
+  pago            INTEGER NOT NULL DEFAULT 0 CHECK (pago >= 0),
+  fecha           TEXT NOT NULL DEFAULT (datetime('now')),
+  -- Una ronda solo se registra una vez por jugador: repetirla no duplica filas.
+  UNIQUE (sala_codigo, numero_ronda, jugador_id)
+);
+
 -- ÍNDICES de las búsquedas frecuentes.
 CREATE INDEX IF NOT EXISTS idx_jugadores_sala   ON jugadores(sala_id);
 CREATE INDEX IF NOT EXISTS idx_partidas_sala    ON partidas(sala_id);
 CREATE INDEX IF NOT EXISTS idx_apuestas_partida ON apuestas(partida_id);
 CREATE INDEX IF NOT EXISTS idx_apuestas_jugador ON apuestas(jugador_id);
+CREATE INDEX IF NOT EXISTS idx_historial_jugador ON historial_rondas(jugador_id, fecha);
+CREATE INDEX IF NOT EXISTS idx_historial_sala    ON historial_rondas(sala_codigo, fecha);
