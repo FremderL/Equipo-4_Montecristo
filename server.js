@@ -6,7 +6,8 @@
 //   - expone /health, /api/salas y /api/salas/:codigo
 //   - mantiene las salas en memoria y atiende crear_sala / entrar_sala / salir_sala / chat
 //   - lanza los juegos rápidos: el anfitrión manda `lanzar` y el servidor genera el
-//     resultado y paga a toda la sala (Cara o Cruz: ×2 a quien acierta)
+//     resultado y paga a toda la sala (Cara o Cruz: ×2 a quien acierta ·
+//     Dados: ×2 a bajo/alto y ×6 al número exacto)
 //   - corre el reloj de turno: si el jugador no responde, el servidor decide por él
 //     (blackjack: se planta · póker: pasa si puede, si no se retira) y la partida sigue
 // El servidor es autoritativo: el navegador solo envía intenciones.
@@ -22,6 +23,7 @@ const { validarApuesta } = require('./lib/fichas.js');
 const { crearRelojDeTurnos, tiempoDeTurno } = require('./lib/turno.js');
 const { lanzarRonda, vistaDeApuesta } = require('./lib/lanzamiento.js');
 const coinflip = require('./lib/juegos/coinflip.js');
+const dice = require('./lib/juegos/dice.js');
 
 const PUERTO = Number(process.env.PORT) || 3000;
 const HOST = process.env.HOST || '0.0.0.0';
@@ -31,10 +33,10 @@ const ALFABETO_CODIGO = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
 
 /**
  * Juegos rápidos con motor listo (lib/juegos/*.js): un solo lanzamiento y
- * liquidación inmediata para toda la sala. Dados y ruleta se registran aquí
+ * liquidación inmediata para toda la sala. Ruleta se registra aquí
  * cuando llegue su ticket; el evento `lanzar` no cambia.
  */
-const MOTORES_RAPIDOS = new Map([[coinflip.JUEGO, coinflip]]);
+const MOTORES_RAPIDOS = new Map([[coinflip.JUEGO, coinflip], [dice.JUEGO, dice]]);
 
 function enteroPositivo(valor, predeterminado) {
   const numero = Number(valor);
@@ -609,8 +611,9 @@ io.on('connection', (socket) => {
       const validacion = validarApuesta(jugador.fichas, monto, false);
       if (!validacion.ok) throw error('APUESTA_INVALIDA', validacion.error);
 
-      // DOC-02 §10.6: la opción tiene que existir en el juego (`cara` o `cruz` en
-      // Cara o Cruz). Los juegos que aún no tienen motor conservan la revisión mínima.
+      // DOC-02 §10.6: la opción tiene que existir en el juego (`cara`/`cruz` en
+      // Cara o Cruz · `bajo`/`alto`/`n:1`…`n:6` en Dados). Los juegos que aún no
+      // tienen motor conservan la revisión mínima.
       const motor = MOTORES_RAPIDOS.get(sala.juego);
       if (motor) {
         const revision = motor.validarOpcion(opcion);
