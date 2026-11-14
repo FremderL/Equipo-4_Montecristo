@@ -153,28 +153,37 @@ Con la sala en fase `jugando`, deja pasar los 5 s sin tocar nada: llega el event
 `turno_automatico` (blackjack: `stand` · póker: `check` o `fold`), el turno pasa al siguiente
 jugador y `estado_sala` trae la acción marcada como `automatica: true`.
 
-### 7. Juega una ronda de Cara o Cruz
+### 7. Juega una ronda de Cara o Cruz o de Dados
 
-Cara o Cruz ya corre completo en el servidor: cada quien apuesta a `cara` o `cruz`, el anfitrión
-manda `lanzar`, **el servidor** lanza la moneda y paga **×2** a quien acertó. Mientras llega la
-pantalla de la mesa se puede jugar desde la consola del navegador: con el servidor encendido, abre
-http://localhost:3000, pulsa `F12` y pega estas líneas una por una.
+Cara o Cruz y Dados ya corren completos en el servidor: cada quien apuesta, el anfitrión
+manda `lanzar`, **el servidor** genera el resultado y paga a toda la sala. En Cara o Cruz se
+apuesta a `cara` o `cruz` y se paga **×2** a quien acierta. En Dados se lanza un dado de 6 caras
+y se elige `bajo` (1–3) o `alto` (4–6), que pagan **×2**, o un número exacto `n:1`…`n:6`, que paga
+**×6**; el 1 no es comodín. Mientras llega la pantalla de la mesa se puede jugar desde la consola
+del navegador: con el servidor encendido, abre http://localhost:3000, pulsa `F12` y pega estas
+líneas una por una.
 
 ```js
 const mesa = io();                                     // la página ya cargó el cliente de Socket.IO
 mesa.onAny((evento, datos) => console.log(evento, datos));
-mesa.emit('crear_sala', { nombre: 'Ana', avatar: '🦊', juego: 'coinflip' }, console.log);
+mesa.emit('crear_sala', { nombre: 'Ana', avatar: '🦊', juego: 'dice' }, console.log);
 mesa.emit('comenzar', console.log);                    // fase: apuestas
-mesa.emit('apostar', { monto: 100, opcion: 'cara' }, console.log);   // saldo: 900
-mesa.emit('lanzar', console.log);                      // el servidor lanza y liquida
+mesa.emit('apostar', { monto: 100, opcion: 'alto' }, console.log);   // saldo: 900
+mesa.emit('lanzar', console.log);                      // el servidor tira el dado y liquida
 mesa.emit('nueva_ronda', console.log);                 // abre la ronda 2
 ```
 
-Al lanzar llegan `ronda_iniciada`, `resultado` (`{ resultado: { lado: 'cara' }, apuestas: [...] }`)
-y `estado_sala` en fase `resultados`. Con 100 fichas a `cara` el saldo queda en **1.100** si sale
-cara y en **900** si sale cruz. Un segundo `lanzar` se rechaza con `RONDA_LIQUIDADA` (la ronda se
-paga una sola vez) y solo el anfitrión puede lanzar. Para probar con más gente, abre otra pestaña
-y entra con `mesa.emit('entrar_sala', { codigo: 'K7Q2M', nombre: 'Bruno', avatar: '🐼' }, console.log)`.
+En otra ventana o pestaña, otra persona entra con
+`mesa.emit('entrar_sala', { codigo: 'K7Q2M', nombre: 'Bruno', avatar: '🐼' }, console.log)` y antes
+de que se lance apuesta por su lado, por ejemplo `{ monto: 100, opcion: 'n:6' }`; el dado es uno
+solo para toda la sala y cada quien cobra según su propia apuesta.
+
+Al lanzar llegan `ronda_iniciada`, `resultado` (`{ resultado: { valor: 4 }, apuestas: [...] }`)
+y `estado_sala` en fase `resultados`. Con 100 fichas a `alto` el saldo queda en **1.100** si el
+dado cae en 4, 5 o 6 y en **900** si cae en 1, 2 o 3; con 100 a `n:6` el saldo queda en **1.500**
+solo si sale el 6. Un segundo `lanzar` se rechaza con `RONDA_LIQUIDADA` (la ronda se paga una sola
+vez) y solo el anfitrión puede lanzar. Para el equivalente en Cara o Cruz cambia
+`juego: 'coinflip'` y las opciones a `'cara'` o `'cruz'`.
 
 ### Modo desarrollo
 
@@ -306,7 +315,7 @@ montecristo/
 │  ├─ lanzamiento.js      # juegos rápidos: lanzar, liquidar y pasar a resultados
 │  ├─ salas.js            # estado en memoria (DOC-03)
 │  ├─ snapshot.js         # data/estado.json
-│  └─ juegos/             # coinflip (listo) · dice · roulette · blackjack · poker
+│  └─ juegos/             # coinflip · dice (listos) · roulette · blackjack · poker
 ├─ data/                  # snapshot JSON (opcional)
 ├─ docs/                  # documentación del proyecto (01–05)
 └─ tests/                 # pruebas con los casos de DOC-02

@@ -57,7 +57,7 @@ el resultado de una ronda se genera una sola vez, en el servidor, y todos los cl
 | `entrar_sala` | Cualquiera | `{ codigo, nombre, avatar }` |
 | `salir_sala` | Jugador | — |
 | `comenzar` | **Anfitrión** | — (abre la fase `apuestas`) |
-| `apostar` | Jugador | `{ monto, opcion }` (Cara o Cruz: `opcion` es `'cara'` o `'cruz'`) |
+| `apostar` | Jugador | `{ monto, opcion }` (Cara o Cruz: `opcion` es `'cara'` o `'cruz'` · Dados: `'bajo'`, `'alto'` o `'n:1'…'n:6'`) |
 | `lanzar` | **Anfitrión** | — (juegos rápidos: el servidor lanza y liquida; lo que mande el cliente se ignora) |
 | `repartir` | **Anfitrión** | — (blackjack y póker: arranca el reloj de turno) |
 | `accion_blackjack` | Jugador en turno | `{ accion: 'hit' \| 'stand' \| 'double' \| 'split' }` |
@@ -86,18 +86,19 @@ Cada evento del cliente se responde con un **acknowledgement**: `{ ok: true }` o
 Los eventos sin datos se pueden mandar solo con su ack: `socket.emit('lanzar', ack)`.
 
 **Resultado de un juego rápido.** En Cara o Cruz `resultado` es `{ lado: 'cara' }` o
-`{ lado: 'cruz' }`. Cada apuesta liquidada trae su `multiplicador`, el `pago` total (incluye lo
-apostado), el `neto` (lo que ganó o perdió) y `resultado: 'gana' | 'pierde' | 'empate'`. Las mismas
-apuestas, ya liquidadas, van en `estado_sala`; antes de lanzar esos cuatro campos valen `null`.
+`{ lado: 'cruz' }`; en Dados es `{ valor: 1 }`…`{ valor: 6 }`. Cada apuesta liquidada trae su
+`multiplicador`, el `pago` total (incluye lo apostado), el `neto` (lo que ganó o perdió) y
+`resultado: 'gana' | 'pierde' | 'empate'`. Las mismas apuestas, ya liquidadas, van en
+`estado_sala`; antes de lanzar esos cuatro campos valen `null`.
 
 | Rechazo de `apostar` / `lanzar` | `error.codigo` |
 | --- | --- |
-| La opción no existe en el juego (algo distinto de `cara` o `cruz`) | `OPCION_INVALIDA` |
+| La opción no existe en el juego (algo distinto de `cara`/`cruz` o de `bajo`/`alto`/`n:1`…`n:6`) | `OPCION_INVALIDA` |
 | Se lanza fuera de la fase `apuestas` | `FASE_INVALIDA` |
 | Lanza alguien que no es el anfitrión | `SOLO_ANFITRION` |
 | Nadie confirmó una apuesta | `SIN_APOSTADORES` |
 | La ronda ya se lanzó (segundo `lanzar`) | `RONDA_LIQUIDADA` |
-| El juego de la sala no se lanza (blackjack, póker) o su motor aún no existe (dados, ruleta) | `JUEGO_SIN_LANZAMIENTO` · `JUEGO_NO_DISPONIBLE` |
+| El juego de la sala no se lanza (blackjack, póker) o su motor aún no existe (ruleta) | `JUEGO_SIN_LANZAMIENTO` · `JUEGO_NO_DISPONIBLE` |
 
 ---
 
@@ -120,11 +121,12 @@ Jugador A                Servidor                       Jugador B
    │◀──── estado_sala ───────│─────── estado_sala ──────────▶
 ```
 
-Así corre ya **Cara o Cruz**: al recibir `lanzar`, `lib/lanzamiento.js` recorre el motor de fases
-(`apuestas → jugando → resultados`) en un solo paso y `lib/juegos/coinflip.js` pone la moneda y el
-pago ×2; antes de `resultado` se emite `ronda_iniciada`. La ronda es todo o nada: si algo falla
-antes de pagar, la sala sigue intacta en `apuestas`. Dados y ruleta usarán el mismo camino cuando
-registren su motor en `server.js`.
+Así corren ya **Cara o Cruz** y **Dados**: al recibir `lanzar`, `lib/lanzamiento.js` recorre el motor
+de fases (`apuestas → jugando → resultados`) en un solo paso y `lib/juegos/coinflip.js` pone la
+moneda (×2) o `lib/juegos/dice.js` tira el dado de 1–6 (×2 en bajo/alto, ×6 al número exacto); antes
+de `resultado` se emite `ronda_iniciada`. La ronda es todo o nada: si algo falla antes de pagar, la
+sala sigue intacta en `apuestas`. Ruleta usará el mismo camino cuando registre su motor en
+`server.js`.
 
 En **blackjack** y **póker** el mismo esquema se repite por turno: el servidor manda `turno`,
 espera la acción (o vence el reloj), aplica la jugada y vuelve a difundir `estado_sala`.
@@ -185,7 +187,7 @@ acortar con `TIEMPO_TURNO_BLACKJACK_MS` y `TIEMPO_TURNO_POKER_MS` para probar la
 │  ├─ snapshot.js         # guardar/cargar data/estado.json
 │  └─ juegos/
 │     ├─ coinflip.js      # Cara o Cruz: opciones, moneda y pago ×2
-│     ├─ dice.js
+│     ├─ dice.js          # Dados: bajo/alto (×2) y número exacto (×6), dado 1–6
 │     ├─ roulette.js
 │     ├─ blackjack.js
 │     └─ poker.js
