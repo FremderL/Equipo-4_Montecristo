@@ -5,6 +5,8 @@
 //   - sirve la interfaz de public/
 //   - expone /health, /api/salas y /api/salas/:codigo
 //   - mantiene las salas en memoria y atiende crear_sala / entrar_sala / salir_sala / chat
+//   - lanza los juegos rápidos: el anfitrión manda `lanzar` y el servidor genera el
+//     resultado y paga a toda la sala (Cara o Cruz: ×2 a quien acierta)
 //   - corre el reloj de turno: si el jugador no responde, el servidor decide por él
 //     (blackjack: se planta · póker: pasa si puede, si no se retira) y la partida sigue
 // El servidor es autoritativo: el navegador solo envía intenciones.
@@ -18,12 +20,21 @@ const { REGLAS } = require('./lib/reglas.js');
 const { FASES, cambiarFase, abrirNuevaRonda, fasePermiteAccion, cancelarTemporizadores } = require('./lib/ronda.js');
 const { validarApuesta } = require('./lib/fichas.js');
 const { crearRelojDeTurnos, tiempoDeTurno } = require('./lib/turno.js');
+const { lanzarRonda, vistaDeApuesta } = require('./lib/lanzamiento.js');
+const coinflip = require('./lib/juegos/coinflip.js');
 
 const PUERTO = Number(process.env.PORT) || 3000;
 const HOST = process.env.HOST || '0.0.0.0';
 const MAX_SALAS = Number(process.env.MAX_SALAS) > 0 ? Number(process.env.MAX_SALAS) : 50;
 const JUEGOS = ['coinflip', 'dice', 'roulette', 'blackjack', 'poker'];
 const ALFABETO_CODIGO = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+
+/**
+ * Juegos rápidos con motor listo (lib/juegos/*.js): un solo lanzamiento y
+ * liquidación inmediata para toda la sala. Dados y ruleta se registran aquí
+ * cuando llegue su ticket; el evento `lanzar` no cambia.
+ */
+const MOTORES_RAPIDOS = new Map([[coinflip.JUEGO, coinflip]]);
 
 function enteroPositivo(valor, predeterminado) {
   const numero = Number(valor);
@@ -114,7 +125,11 @@ function estadoDeSala(sala) {
     // aunque todavía no haya nadie en turno.
     limiteTurnoMs: limiteDeTurno(sala.juego),
     turno: sala.turnos ? sala.turnos.vistaPublica() : null,
-    apuestas: sala.apuestas.map(({ jugadorId, monto, opcion }) => ({ jugadorId, monto, opcion })),
+    // Resultado autoritativo de la ronda: null hasta que el servidor lanza. Quien
+    // entra con la ronda ya en `resultados` lo recibe aquí. La semilla nunca se difunde.
+    resultado: sala.resultado || null,
+    // Tras liquidar, cada apuesta trae además multiplicador, pago, neto y resultado.
+    apuestas: sala.apuestas.map(vistaDeApuesta),
     acciones: sala.acciones.map(({ jugadorId, accion, automatica, motivo, mensaje }) => ({
       jugadorId,
       accion,
@@ -148,6 +163,11 @@ function crearSala(codigo, juego, anfitrionId, jugador) {
     numero_ronda: 1,
     apuestas: [],
     apuestasConfirmadas: 0,
+    // Juegos rápidos: lo que salió en la ronda y la semilla con que se generó
+    // (`partidas.resultado` y `partidas.semilla_rng` de DOC-03). Los llena
+    // lib/lanzamiento.js al lanzar y los limpia lib/ronda.js al abrir otra ronda.
+    resultado: null,
+    semillaRng: null,
     acciones: [],
     // Póker: cuánto hay que igualar y cuánto lleva puesto cada quien. Es el
     // contexto que decide si el servidor pasa o se retira por inactividad.
@@ -176,6 +196,18 @@ function asignarAnfitrion(sala) {
   sala.anfitrionId = siguiente ? siguiente.id : null;
 }
 
+/** Devuelve la apuesta pendiente de un jugador y la quita de la mesa. */
+function reembolsarApuesta(sala, jugadorId) {
+  const indice = sala.apuestas.findIndex((apuesta) => apuesta.jugadorId === jugadorId);
+  if (indice < 0) return;
+
+  const [apuesta] = sala.apuestas.splice(indice, 1);
+  const jugador = sala.jugadores.get(jugadorId);
+  if (jugador) jugador.fichas += apuesta.monto;
+  sala.apuestasConfirmadas = sala.apuestas.length;
+  sala.bote = Math.max(0, (Number(sala.bote) || 0) - apuesta.monto);
+}
+
 /** Quita al jugador de su sala y limpia la sala si queda vacía. */
 function abandonarSala(socket) {
   const codigo = socket.data.codigoSala;
@@ -190,6 +222,11 @@ function abandonarSala(socket) {
   // Si se va (o se desconecta) cuando le tocaba jugar, el servidor decide por él
   // y la vuelta sigue: la mesa no se queda esperando a quien ya no está.
   if (sala.turnos) sala.turnos.retirarJugador(socket.id, 'abandono');
+
+  // DOC-01 §6 · DOC-04 §5: si la ronda todavía no se lanza (o reparte), la apuesta
+  // de quien sale se reembolsa y desaparece: no se liquida a quien ya no está ni
+  // cuenta como apuesta confirmada para iniciar la ronda.
+  if (fasePermiteAccion(sala.fase, 'apostar')) reembolsarApuesta(sala, socket.id);
 
   sala.jugadores.delete(socket.id);
 
@@ -472,6 +509,14 @@ function atender(socket, ack, funcion) {
 io.on('connection', (socket) => {
   socket.data.codigoSala = null;
 
+  // DOC-04 §3.2: `comenzar`, `lanzar`, `repartir`, `nueva_ronda` y `salir_sala` no
+  // llevan datos. Si el cliente los manda solo con su ack (`socket.emit('lanzar', ack)`),
+  // el paquete se acomoda como (datos = null, ack): así todo evento responde su ack.
+  socket.use((paquete, siguiente) => {
+    if (paquete.length === 2 && typeof paquete[1] === 'function') paquete.splice(1, 0, null);
+    siguiente();
+  });
+
   socket.on('crear_sala', (datos, ack) => {
     try {
       if (salas.size >= MAX_SALAS) {
@@ -563,16 +608,53 @@ io.on('connection', (socket) => {
 
       const validacion = validarApuesta(jugador.fichas, monto, false);
       if (!validacion.ok) throw error('APUESTA_INVALIDA', validacion.error);
-      if (!opcion) throw error('APUESTA_INVALIDA', 'Elige una opción para tu apuesta.');
+
+      // DOC-02 §10.6: la opción tiene que existir en el juego (`cara` o `cruz` en
+      // Cara o Cruz). Los juegos que aún no tienen motor conservan la revisión mínima.
+      const motor = MOTORES_RAPIDOS.get(sala.juego);
+      if (motor) {
+        const revision = motor.validarOpcion(opcion);
+        if (!revision.ok) throw error('OPCION_INVALIDA', revision.error);
+      } else if (!opcion) {
+        throw error('APUESTA_INVALIDA', 'Elige una opción para tu apuesta.');
+      }
 
       jugador.fichas -= monto;
-      sala.apuestas.push({ jugadorId: jugador.id, monto, opcion, confirmadaEn: Date.now() });
+      sala.apuestas.push({ jugadorId: jugador.id, nombre: jugador.nombre, monto, opcion, confirmadaEn: Date.now() });
       sala.apuestasConfirmadas = sala.apuestas.length;
       sala.bote += monto;
 
       io.to(sala.codigo).emit('apuesta_confirmada', { jugadorId: jugador.id, nombre: jugador.nombre, monto, opcion });
       difundirEstado(sala);
       return { saldo: jugador.fichas, monto, opcion };
+    });
+  });
+
+  // El anfitrión lanza (juegos rápidos · DOC-04 §4). En un solo paso el servidor
+  // cierra las apuestas, genera el resultado con su RNG, paga a toda la sala con
+  // ese mismo resultado y deja la ronda en `resultados`. Lo que el cliente mande
+  // en `datos` se ignora: nadie puede enviar, elegir ni adelantar el resultado.
+  socket.on('lanzar', (datos, ack) => {
+    atender(socket, ack, () => {
+      const { sala, jugador } = contextoDeSala(socket);
+      const motor = MOTORES_RAPIDOS.get(sala.juego);
+      if (!motor) {
+        throw limiteDeTurno(sala.juego) === null
+          ? error('JUEGO_NO_DISPONIBLE', 'El lanzamiento de este juego todavía no está disponible.')
+          : error('JUEGO_SIN_LANZAMIENTO', 'Este juego no se lanza: el anfitrión reparte y se juega por turnos.');
+      }
+
+      // Valida fase, anfitrión y apuestas. Si rechaza, la sala queda intacta; un
+      // segundo `lanzar` no vuelve a liquidar (RONDA_LIQUIDADA).
+      const ronda = lanzarRonda(sala, motor, { jugadorId: jugador.id });
+
+      // PUNTO DE EXTENSIÓN: aquí se guarda la ronda terminada (historial y
+      // estadísticas) cuando exista ese registro; `ronda.apuestas` ya trae
+      // jugador, apuesta, opción, resultado y pago.
+      io.to(sala.codigo).emit('ronda_iniciada', { numeroRonda: ronda.numeroRonda, juego: ronda.juego });
+      io.to(sala.codigo).emit('resultado', ronda);
+      difundirEstado(sala);
+      return { numeroRonda: ronda.numeroRonda, resultado: ronda.resultado, saldo: jugador.fichas };
     });
   });
 
@@ -586,7 +668,7 @@ io.on('connection', (socket) => {
         throw error('FASE_INVALIDA', 'Solo se reparte durante la fase de apuestas.');
       }
       if (limiteDeTurno(sala.juego) === null) {
-        throw error('JUEGO_SIN_TURNOS', 'Este juego no se juega por turnos; su lanzamiento llegará con el motor de resultados.');
+        throw error('JUEGO_SIN_TURNOS', 'Este juego no se reparte ni se juega por turnos: el anfitrión lo inicia con «lanzar».');
       }
 
       const orden = sala.apuestas
@@ -617,7 +699,7 @@ io.on('connection', (socket) => {
       }
 
       cancelarTurnos(sala, 'nueva_ronda');
-      abrirNuevaRonda(sala, jugador.id); // limpia temporizadores y apuestas, y suma una ronda
+      abrirNuevaRonda(sala, jugador.id); // limpia temporizadores, apuestas y resultado, y suma una ronda
       sala.acciones.length = 0;
       sala.apuestaActual = 0;
       sala.puestas = {};
