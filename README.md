@@ -398,6 +398,20 @@ historialDeJugador('p_ana', { limite: 10 });     // últimas rondas de Ana
 estadisticasDeJugador('p_ana');                  // rondas, ganadas, apostado, cobrado, neto…
 ```
 
+## Salas: entrar, salir y estado en tiempo real
+
+- **Entrar por código:** `entrar_sala` con el código de 5 caracteres (se acepta en minúsculas o con
+  espacios). Si el código no existe se responde `SALA_NO_ENCONTRADA`.
+- **Máximo 6 jugadores:** la mesa tiene 6 asientos numerados del 1 al 6; el séptimo recibe
+  `SALA_LLENA` y entra en cuanto alguien libere un asiento.
+- **Salir:** `salir_sala` libera el asiento, devuelve la apuesta pendiente si la ronda no se había
+  lanzado y pasa el rol de anfitrión al siguiente jugador. Si se va el último, la sala desaparece y
+  el servidor emite `sala_cerrada`.
+- **Estado en tiempo real:** cada cambio (alguien entra, sale o apuesta, y también cada fase, turno y
+  resultado) se difunde a **todos** los jugadores de la sala con el evento `estado_sala`, que incluye
+  `motivo` (`entrada`, `salida`, `apuesta`, `fase`, `turno`, `resultado`…). Nadie necesita recargar
+  la página.
+
 ---
 
 ## Documentación

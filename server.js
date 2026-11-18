@@ -102,8 +102,19 @@ function estadoPublico(sala) {
   return estado;
 }
 
-function difundirEstado(sala) {
-  io.to(sala.codigo).emit('estado_sala', estadoPublico(sala));
+/** Estado que viaja en `estado_sala`: el de la sala más el motivo del aviso. */
+function estadoConMotivo(sala, motivo) {
+  return { ...estadoPublico(sala), motivo };
+}
+
+/**
+ * Ticket 2: manda el estado completo de la sala a TODOS sus jugadores cada vez
+ * que algo cambia (alguien entra, sale, apuesta, se abre la ronda, se lanza…).
+ * `motivo` dice por qué se envió, así el navegador puede reaccionar sin adivinar.
+ */
+function difundirEstado(sala, motivo = 'cambio') {
+  if (!sala || sala.estado === ESTADOS_SALA.CERRADA) return;
+  io.to(sala.codigo).emit('estado_sala', estadoConMotivo(sala, motivo));
 }
 
 /**
@@ -144,7 +155,7 @@ function abandonarSala(socket) {
     io.to(codigo || salida.sala.codigo).emit('sala_cerrada', aviso);
     socket.emit('sala_cerrada', aviso);
   } else {
-    difundirEstado(salida.sala);
+    difundirEstado(salida.sala, 'salida');
   }
 
   return salida;
@@ -301,7 +312,7 @@ function cerrarMano(sala, motivo) {
     registrarHistorial(sala);
   }
   io.to(sala.codigo).emit('turno', turnoSinJugador(sala, motivo || 'mano_cerrada'));
-  difundirEstado(sala);
+  difundirEstado(sala, 'resultado');
 }
 
 function cancelarTurnos(sala, motivo = 'cancelado') {
@@ -327,7 +338,7 @@ function iniciarTurnos(sala, orden) {
     validar: (jugadorId, accion, extra) => validarAccionDeTurno(sala, jugadorId, accion, extra),
     alIniciarTurno: (turno) => {
       io.to(sala.codigo).emit('turno', turno);
-      difundirEstado(sala);
+      difundirEstado(sala, 'turno');
     },
     alResolver: (registro) => {
       cobrarAccionDePoker(sala, registro);
@@ -343,7 +354,7 @@ function iniciarTurnos(sala, orden) {
           numeroRonda: sala.numero_ronda
         });
       }
-      difundirEstado(sala);
+      difundirEstado(sala, 'turno');
     },
     alTerminar: (resumen) => {
       sala.turnos = null;
@@ -351,7 +362,7 @@ function iniciarTurnos(sala, orden) {
     },
     alCancelar: (resumen) => {
       io.to(sala.codigo).emit('turno', turnoSinJugador(sala, resumen.motivo));
-      difundirEstado(sala);
+      difundirEstado(sala, 'turno');
     }
   });
 
@@ -487,13 +498,13 @@ io.on('connection', (socket) => {
 
       if (salaPrevia && salaPrevia !== sala) {
         socket.leave(salaPrevia.codigo);
-        if (salaPrevia.estado === ESTADOS_SALA.ABIERTA) difundirEstado(salaPrevia);
+        if (salaPrevia.estado === ESTADOS_SALA.ABIERTA) difundirEstado(salaPrevia, 'salida');
       }
 
       socket.data.codigoSala = sala.codigo;
       socket.join(sala.codigo);
 
-      socket.emit('estado_sala', estadoPublico(sala));
+      socket.emit('estado_sala', estadoConMotivo(sala, 'creada'));
       if (typeof ack === 'function') ack({ ok: true, codigo: sala.codigo });
     } catch (fallo) {
       if (typeof ack === 'function') {
@@ -515,7 +526,7 @@ io.on('connection', (socket) => {
 
       if (salidaAnterior && salidaAnterior.sala) {
         socket.leave(salidaAnterior.sala.codigo);
-        if (!salidaAnterior.cerrada) difundirEstado(salidaAnterior.sala);
+        if (!salidaAnterior.cerrada) difundirEstado(salidaAnterior.sala, 'salida');
       }
 
       socket.data.codigoSala = sala.codigo;
@@ -523,9 +534,10 @@ io.on('connection', (socket) => {
 
       if (yaEstaba) {
         // Repetir la solicitud no cambia el asiento, el saldo ni el anfitrión.
-        socket.emit('estado_sala', estadoPublico(sala));
+        socket.emit('estado_sala', estadoConMotivo(sala, 'reconexion'));
       } else {
-        difundirEstado(sala);
+        // Ticket 2: todos los de la mesa (incluido quien acaba de entrar) ven el estado nuevo.
+        difundirEstado(sala, 'entrada');
       }
 
       if (typeof ack === 'function') ack({ ok: true, codigo: sala.codigo });
@@ -561,7 +573,7 @@ io.on('connection', (socket) => {
         throw error('FASE_INVALIDA', 'La ronda ya está en marcha o en resultados.');
       }
       actualizarFaseSala(sala, FASES.APUESTAS, { accion: 'comenzar', jugadorId: jugador.id });
-      difundirEstado(sala);
+      difundirEstado(sala, 'fase');
       return { fase: sala.fase, numeroRonda: sala.numero_ronda };
     });
   });
@@ -601,7 +613,7 @@ io.on('connection', (socket) => {
       sala.bote += monto;
 
       io.to(sala.codigo).emit('apuesta_confirmada', { jugadorId: jugador.id, nombre: jugador.nombre, monto, opcion });
-      difundirEstado(sala);
+      difundirEstado(sala, 'apuesta');
       return { saldo: jugador.fichas, monto, opcion };
     });
   });
@@ -629,7 +641,7 @@ io.on('connection', (socket) => {
       registrarHistorial(sala, { numeroRonda: ronda.numeroRonda, apuestas: ronda.apuestas });
       io.to(sala.codigo).emit('ronda_iniciada', { numeroRonda: ronda.numeroRonda, juego: ronda.juego });
       io.to(sala.codigo).emit('resultado', ronda);
-      difundirEstado(sala);
+      difundirEstado(sala, 'resultado');
       return { numeroRonda: ronda.numeroRonda, resultado: ronda.resultado, saldo: jugador.fichas };
     });
   });
@@ -688,7 +700,7 @@ io.on('connection', (socket) => {
       iniciarSiguienteRonda(sala, jugador.id);
       sala.turnos = null;
 
-      difundirEstado(sala);
+      difundirEstado(sala, 'fase');
       return { fase: sala.fase, numeroRonda: sala.numero_ronda };
     });
   });

@@ -54,8 +54,8 @@ el resultado de una ronda se genera una sola vez, en el servidor, y todos los cl
 | Evento | Quién lo manda | Datos |
 | --- | --- | --- |
 | `crear_sala` | Cualquiera | `{ nombre, avatar, juego }` |
-| `entrar_sala` | Cualquiera | `{ codigo, nombre, avatar }` |
-| `salir_sala` | Jugador | — |
+| `entrar_sala` | Cualquiera | `{ codigo, nombre, avatar }` — el código se acepta en minúsculas, con espacios y hasta 6 jugadores por sala; responde `{ ok: true, codigo }` o `SALA_LLENA` / `SALA_NO_ENCONTRADA` |
+| `salir_sala` | Jugador | — responde `{ ok: true, codigo, salaCerrada }` |
 | `comenzar` | **Anfitrión** | — (abre la fase `apuestas`) |
 | `apostar` | Jugador | `{ monto, opcion }` (las opciones dependen del juego, ver abajo) |
 | `lanzar` | **Anfitrión** | — (juegos rápidos: el servidor lanza y liquida; lo que mande el cliente se ignora) |
@@ -71,7 +71,7 @@ el resultado de una ronda se genera una sola vez, en el servidor, y todos los cl
 | Evento | Cuándo | Datos |
 | --- | --- | --- |
 | `bienvenida` | Al conectarse el navegador | `{ mensaje, socketId, fecha }` (se imprime también en consola) |
-| `estado_sala` | Al entrar y después de **cada** cambio | Sala completa (`lib/salas.js`): `id`, `codigo`, `juego`, `estado`, `fase`, `anfitrionId`, `capacidad`, `asientosLibres`, `apuestaMinima`, `numeroRonda`, `jugadores` (en orden de `asiento` 1–6, con `fichas`, `esAnfitrion` y `conectado`), `apuestas`, `bote`, `turno` y `resultado` (`null` hasta que se lanza) |
+| `estado_sala` | Al entrar y después de **cada** cambio | Sala completa (`lib/salas.js`): `id`, `codigo`, `juego`, `estado`, `fase`, `anfitrionId`, `capacidad`, `asientosLibres`, `apuestaMinima`, `numeroRonda`, `jugadores` (en orden de `asiento` 1–6, con `fichas`, `esAnfitrion` y `conectado`), `apuestas`, `bote`, `turno`, `resultado` (`null` hasta que se lanza) y `motivo` (`creada` · `entrada` · `salida` · `apuesta` · `fase` · `turno` · `resultado` · `reconexion`) |
 | `ronda_iniciada` | Al lanzar o repartir | `{ numeroRonda, juego }` |
 | `cartas` | Solo al dueño de esas cartas | `{ cartas: [...] }`; en blackjack incluye también `numeroRonda` y `puntos` |
 | `turno` | En blackjack y póker, al empezar cada turno y al cerrar la vuelta | `{ jugadorId, deadline, tiempoMs, segundosRestantes, posicion, total, activo }`; `jugadorId: null` cuando ya no hay turno |
@@ -80,11 +80,23 @@ el resultado de una ronda se genera una sola vez, en el servidor, y todos los cl
 | `resultado` | Al liquidar | `{ juego, numeroRonda, resultado, apuestas: [{ jugadorId, nombre, monto, opcion, multiplicador, pago, neto, resultado }] }` |
 | `chat_mensaje` | Al escribir en el chat | `{ nombre, texto, hora }` |
 | `error` | Cuando una acción se rechaza | `{ mensaje, codigo }` |
-| `sala_cerrada` | Al cerrar la sala o quedarse vacía | `{ motivo }` |
+| `sala_cerrada` | Cuando se va el último jugador o la sala se cierra | `{ codigo, motivo }` (`motivo: 'sala_vacia'`). Se manda al canal de la sala y al jugador que acaba de salir |
 
 Cada evento del cliente se responde con un **acknowledgement**: `{ ok: true }` o
 `{ ok: false, error }`. Si llega `ok: false`, la interfaz muestra el mensaje y no cambia nada.
 Los eventos sin datos se pueden mandar solo con su ack: `socket.emit('lanzar', ack)`.
+
+**Estado en tiempo real.** `estado_sala` es la única fuente de verdad para el navegador: sale del
+servidor con `difundirEstado(sala, motivo)` hacia **todos** los sockets de la sala
+(`io.to(sala.codigo)`) cada vez que alguien entra, sale o apuesta, y también en cada cambio de fase,
+turno y resultado. El estado nunca se difunde desde una sala ya cerrada y jamás incluye la semilla,
+el mazo ni las manos privadas.
+
+**Entrar y salir de una sala.** `new Map()` de salas en memoria con clave por código de 5
+caracteres, capacidad de **6 asientos** numerados 1–6 (`REGLAS.JUGADORES_POR_SALA`): el séptimo
+recibe `SALA_LLENA`. Al salir se libera el asiento, se reembolsa la apuesta pendiente si la ronda no
+se había lanzado, el rol de anfitrión pasa al siguiente jugador y, si no queda nadie, la sala se
+elimina y se emite `sala_cerrada`.
 
 **Reparto de blackjack.** Solo reciben `cartas` quienes confirmaron una apuesta. Todos ven
 `estado_sala.casa`: antes del reparto es `null`; durante el juego, por ejemplo,
