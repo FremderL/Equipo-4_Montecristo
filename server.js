@@ -17,29 +17,38 @@ const http = require('node:http');
 const express = require('express');
 const { Server } = require('socket.io');
 const { REGLAS } = require('./lib/reglas.js');
-const { FASES, cambiarFase, abrirNuevaRonda, fasePermiteAccion, cancelarTemporizadores, esAnfitrion } = require('./lib/ronda.js');
+const { FASES, fasePermiteAccion } = require('./lib/ronda.js');
 const { validarApuesta } = require('./lib/fichas.js');
 const { crearRelojDeTurnos, tiempoDeTurno } = require('./lib/turno.js');
-const { lanzarRonda, vistaDeApuesta, nuevaSemilla } = require('./lib/lanzamiento.js');
-const { crearRng } = require('./lib/rng.js');
+const { lanzarRonda } = require('./lib/lanzamiento.js');
+const {
+  ESTADOS_SALA,
+  MAX_SALAS_POR_DEFECTO,
+  normalizarCodigo,
+  actualizarFaseSala,
+  iniciarSiguienteRonda,
+  estadoDeSala,
+  resumenDeSala,
+  consultaDeSala,
+  crearAlmacenSalas
+} = require('./lib/salas.js');
 const coinflip = require('./lib/juegos/coinflip.js');
 const { contarPuntos, repartirInicial, vistaDeCasa } = require('./lib/juegos/blackjack.js');
 
+function enteroPositivo(valor, predeterminado) {
+  const numero = Number(valor);
+  return Number.isInteger(numero) && numero > 0 ? numero : predeterminado;
+}
+
 const PUERTO = Number(process.env.PORT) || 3000;
 const HOST = process.env.HOST || '0.0.0.0';
-const MAX_SALAS = Number(process.env.MAX_SALAS) > 0 ? Number(process.env.MAX_SALAS) : 50;
-const JUEGOS = ['coinflip', 'dice', 'roulette', 'blackjack', 'poker'];
+const MAX_SALAS = enteroPositivo(process.env.MAX_SALAS, MAX_SALAS_POR_DEFECTO);
 
 /** Juegos rápidos con motor listo: un lanzamiento y una liquidación para toda la sala. */
 const MOTORES_RAPIDOS = new Map([
   [coinflip.JUEGO, coinflip],
   [roulette.JUEGO, roulette]
 ]);
-
-function enteroPositivo(valor, predeterminado) {
-  const numero = Number(valor);
-  return Number.isInteger(numero) && numero > 0 ? numero : predeterminado;
-}
 
 /**
  * Límites de turno de DOC-02 (25 s blackjack · 30 s póker). Se pueden acortar
@@ -56,8 +65,8 @@ function limiteDeTurno(juego) {
   return tiempoDeTurno(juego, TIEMPOS_DE_TURNO);
 }
 
-/** codigo -> sala. Todo vive en memoria: al reiniciar se empieza de cero. */
-const salas = new Map();
+/** Almacén autoritativo de salas en memoria (lib/salas.js · DOC-03 §4). */
+const salas = crearAlmacenSalas({ maxSalas: MAX_SALAS });
 
 // ---------------------------------------------------------------------------
 // Utilidades
@@ -136,96 +145,19 @@ function estadoDeSala(sala) {
 }
 
 function difundirEstado(sala) {
-  io.to(sala.codigo).emit('estado_sala', estadoDeSala(sala));
+  io.to(sala.codigo).emit('estado_sala', estadoPublico(sala));
 }
 
-/** Estructura de una sala en memoria (DOC-03 + reloj de turno). */
-function crearSala(codigo, juego, anfitrionId, jugador) {
-  return {
-    codigo,
-    juego,
-    fase: FASES.ESPERA,
-    anfitrionId,
-    creadaEn: Date.now(),
-    actualizadaEn: Date.now(),
-    numero_ronda: 1,
-    apuestas: [],
-    apuestasConfirmadas: 0,
-    // El resultado, la semilla del RNG y el reparto son propios de esta ronda.
-    resultado: null,
-    semillaRng: null,
-    blackjack: null,
-    acciones: [],
-    // Póker: cuánto hay que igualar y cuánto lleva puesto cada quien. Es el
-    // contexto que decide si el servidor pasa o se retira por inactividad.
-    apuestaActual: 0,
-    puestas: {},
-    bote: 0,
-    turnos: null,
-    temporizadores: new Set(),
-    tareasPendientes: [],
-    jugadores: new Map([[jugador.id, jugador]])
-  };
-}
-
-function crearJugador(socketId, { nombre, avatar }) {
-  return {
-    id: socketId,
-    nombre: validarNombre(nombre),
-    avatar: validarAvatar(avatar),
-    fichas: REGLAS.SALDO_INICIAL,
-    conectado: true
-  };
-}
-
-function asignarAnfitrion(sala) {
-  const siguiente = jugadoresDeSala(sala)[0];
-  sala.anfitrionId = siguiente ? siguiente.id : null;
-}
-
-/** Devuelve la apuesta pendiente de un jugador y la quita de la mesa. */
-function reembolsarApuesta(sala, jugadorId) {
-  const indice = sala.apuestas.findIndex((apuesta) => apuesta.jugadorId === jugadorId);
-  if (indice < 0) return;
-
-  const [apuesta] = sala.apuestas.splice(indice, 1);
-  const jugador = sala.jugadores.get(jugadorId);
-  if (jugador) jugador.fichas += apuesta.monto;
-  sala.apuestasConfirmadas = sala.apuestas.length;
-  sala.bote = Math.max(0, (Number(sala.bote) || 0) - apuesta.monto);
-}
-
-/** Quita al jugador de su sala y limpia la sala si queda vacía. */
+/** Quita al jugador de su sala y la elimina si queda vacía. */
 function abandonarSala(socket) {
-  const codigo = socket.data.codigoSala;
-  if (!codigo) return;
-
-  const sala = salas.get(codigo);
+  const salida = salas.salir(socket.id);
+  const codigo = socket.data.codigoSala || (salida.sala && salida.sala.codigo);
   socket.data.codigoSala = null;
-  socket.leave(codigo);
+  if (codigo) socket.leave(codigo);
 
-  if (!sala) return;
-
-  // Si se va (o se desconecta) cuando le tocaba jugar, el servidor decide por él
-  // y la vuelta sigue: la mesa no se queda esperando a quien ya no está.
-  if (sala.turnos) sala.turnos.retirarJugador(socket.id, 'abandono');
-
-  // DOC-01 §6 · DOC-04 §5: si la ronda todavía no se lanza (o reparte), la apuesta
-  // de quien sale se reembolsa y desaparece: no se liquida a quien ya no está ni
-  // cuenta como apuesta confirmada para iniciar la ronda.
-  if (fasePermiteAccion(sala.fase, 'apostar')) reembolsarApuesta(sala, socket.id);
-
-  sala.jugadores.delete(socket.id);
-
-  if (sala.jugadores.size === 0) {
-    cancelarTurnos(sala, 'sala_vacia');
-    cancelarTemporizadores(sala);
-    salas.delete(codigo);
-    return;
+  if (salida.sala && !salida.cerrada) {
+    difundirEstado(salida.sala);
   }
-
-  if (sala.anfitrionId === socket.id) asignarAnfitrion(sala);
-  difundirEstado(sala);
 }
 
 // ---------------------------------------------------------------------------
@@ -322,7 +254,7 @@ function cobrarAccionDePoker(sala, registro) {
 function devolverApuestas(sala) {
   for (const apuesta of sala.apuestas) {
     const jugador = sala.jugadores.get(apuesta.jugadorId);
-    if (!jugador) continue; // quien salió en juego no se reembolsa (DOC-04 §5)
+    if (!jugador || jugador.conectado === false) continue; // quien salió en juego no se reembolsa (DOC-04 §5)
     jugador.fichas += apuesta.monto + (Number(sala.puestas[apuesta.jugadorId]) || 0);
   }
   sala.bote = 0;
@@ -334,7 +266,7 @@ function devolverApuestas(sala) {
 function cerrarMano(sala, motivo) {
   if (sala.fase === FASES.JUGANDO) {
     devolverApuestas(sala);
-    cambiarFase(sala, FASES.RESULTADOS, { servidor: true });
+    actualizarFaseSala(sala, FASES.RESULTADOS, { servidor: true });
   }
   io.to(sala.codigo).emit('turno', turnoSinJugador(sala, motivo || 'mano_cerrada'));
   difundirEstado(sala);
@@ -443,33 +375,19 @@ app.get('/sala/:codigo', (req, res) => {
 });
 
 app.get('/api/salas', (req, res) => {
-  const lista = Array.from(salas.values()).map((sala) => ({
-    codigo: sala.codigo,
-    juego: sala.juego,
-    fase: sala.fase,
-    jugadores: sala.jugadores.size,
-    capacidad: REGLAS.JUGADORES_POR_SALA
-  }));
-  res.json({ ok: true, salas: lista });
+  res.json({ ok: true, salas: salas.listar().map(resumenDeSala) });
 });
 
 app.get('/api/salas/:codigo', (req, res) => {
-  const codigo = normalizarCodigoSala(req.params.codigo);
-  const sala = salas.get(codigo);
+  const codigo = normalizarCodigo(req.params.codigo);
+  const sala = salas.obtener(codigo);
 
   if (!sala) {
     res.status(404).json({ ok: false, existe: false, codigo, error: 'La sala no existe o ya se cerró.' });
     return;
   }
 
-  res.json({
-    ok: true,
-    existe: true,
-    codigo: sala.codigo,
-    juego: sala.juego,
-    fase: sala.fase,
-    asientosLibres: REGLAS.JUGADORES_POR_SALA - sala.jugadores.size
-  });
+  res.json(consultaDeSala(sala));
 });
 
 // ---------------------------------------------------------------------------
@@ -478,8 +396,7 @@ app.get('/api/salas/:codigo', (req, res) => {
 
 /** Sala y jugador del socket, o un error con código si no está sentado. */
 function contextoDeSala(socket) {
-  const codigo = socket.data.codigoSala;
-  const sala = codigo ? salas.get(codigo) : null;
+  const sala = salas.salaDeJugador(socket.id);
   const jugador = sala ? sala.jugadores.get(socket.id) : null;
   if (!sala || !jugador) throw error('SIN_SALA', 'No estás dentro de una sala.');
   return { sala, jugador };
@@ -515,8 +432,19 @@ io.on('connection', (socket) => {
 
   socket.on('crear_sala', (datos, ack) => {
     try {
-      if (salas.size >= MAX_SALAS) {
-        throw error('LIMITE_SALAS', 'Se alcanzó el máximo de salas activas. Inténtalo más tarde.');
+      const salaPrevia = salas.salaDeJugador(socket.id);
+      const sala = salas.crear({
+        juego: datos && datos.juego,
+        anfitrion: {
+          id: socket.id,
+          nombre: datos && datos.nombre,
+          avatar: datos && datos.avatar
+        }
+      });
+
+      if (salaPrevia) {
+        socket.leave(salaPrevia.codigo);
+        if (salaPrevia.estado === ESTADOS_SALA.ABIERTA) difundirEstado(salaPrevia);
       }
 
       const juego = validarJuego(datos && datos.juego);
@@ -530,8 +458,8 @@ io.on('connection', (socket) => {
       socket.data.codigoSala = codigo;
       socket.join(codigo);
 
-      socket.emit('estado_sala', estadoDeSala(sala));
-      if (typeof ack === 'function') ack({ ok: true, codigo });
+      socket.emit('estado_sala', estadoPublico(sala));
+      if (typeof ack === 'function') ack({ ok: true, codigo: sala.codigo });
     } catch (fallo) {
       if (typeof ack === 'function') {
         ack({ ok: false, error: { codigo: fallo.codigo || 'ERROR', mensaje: fallo.message } });
@@ -541,31 +469,26 @@ io.on('connection', (socket) => {
 
   socket.on('entrar_sala', (datos, ack) => {
     try {
-      const codigo = normalizarCodigoSala(datos && datos.codigo);
-      if (!codigo) {
-        throw error('CODIGO_INVALIDO', 'El código de sala no es válido. Debe tener cinco letras o números.');
+      const { sala, yaEstaba, salidaAnterior } = salas.unir(datos && datos.codigo, {
+        id: socket.id,
+        nombre: datos && datos.nombre,
+        avatar: datos && datos.avatar
+      });
+
+      if (salidaAnterior && salidaAnterior.sala) {
+        socket.leave(salidaAnterior.sala.codigo);
+        if (!salidaAnterior.cerrada) difundirEstado(salidaAnterior.sala);
       }
 
-      const sala = salas.get(codigo);
-      if (!sala) throw error('SALA_NO_ENCONTRADA', 'La sala no existe o ya se cerró.');
+      socket.data.codigoSala = sala.codigo;
+      socket.join(sala.codigo);
 
-      if (socket.data.codigoSala === codigo && sala.jugadores.has(socket.id)) {
-        // Repetir la solicitud no debe cambiar el asiento, el saldo ni el anfitrión.
-        socket.emit('estado_sala', estadoDeSala(sala));
+      if (yaEstaba) {
+        socket.emit('estado_sala', estadoPublico(sala));
       } else {
-        if (sala.jugadores.size >= REGLAS.JUGADORES_POR_SALA) {
-          throw error('SALA_LLENA', `La sala ya tiene ${REGLAS.JUGADORES_POR_SALA} jugadores.`);
-        }
-
-        const jugador = crearJugador(socket.id, datos);
-        abandonarSala(socket);
-        sala.jugadores.set(jugador.id, jugador);
-        socket.data.codigoSala = codigo;
-        socket.join(codigo);
         difundirEstado(sala);
       }
-
-      if (typeof ack === 'function') ack({ ok: true, codigo });
+      if (typeof ack === 'function') ack({ ok: true, codigo: sala.codigo });
     } catch (fallo) {
       if (typeof ack === 'function') {
         ack({ ok: false, error: { codigo: fallo.codigo || 'ERROR', mensaje: fallo.message } });
@@ -589,7 +512,7 @@ io.on('connection', (socket) => {
       if (!fasePermiteAccion(sala.fase, 'comenzar')) {
         throw error('FASE_INVALIDA', 'La ronda ya está en marcha o en resultados.');
       }
-      cambiarFase(sala, FASES.APUESTAS, { accion: 'comenzar', jugadorId: jugador.id });
+      actualizarFaseSala(sala, FASES.APUESTAS, { accion: 'comenzar', jugadorId: jugador.id });
       difundirEstado(sala);
       return { fase: sala.fase, numeroRonda: sala.numero_ronda };
     });
@@ -624,10 +547,13 @@ io.on('connection', (socket) => {
         if (!opcion) throw error('APUESTA_INVALIDA', 'Elige una opción para tu apuesta.');
       }
 
+      const ahora = Date.now();
       jugador.fichas -= monto;
-      sala.apuestas.push({ jugadorId: jugador.id, nombre: jugador.nombre, monto, opcion, confirmadaEn: Date.now() });
+      jugador.ultimaActividad = ahora;
+      sala.apuestas.push({ jugadorId: jugador.id, nombre: jugador.nombre, monto, opcion, confirmadaEn: ahora });
       sala.apuestasConfirmadas = sala.apuestas.length;
       sala.bote += monto;
+      sala.actualizadaEn = ahora;
 
       io.to(sala.codigo).emit('apuesta_confirmada', { jugadorId: jugador.id, nombre: jugador.nombre, monto, opcion });
       difundirEstado(sala);
@@ -683,11 +609,7 @@ io.on('connection', (socket) => {
         .filter((jugadorId) => sala.jugadores.has(jugadorId));
       if (orden.length === 0) throw error('SIN_APOSTADORES', 'Nadie confirmó una apuesta en esta ronda.');
 
-      // El cliente no elige cartas ni semilla. Preparamos el reparto antes de
-      // cambiar la fase para no dejar una ronda a medias si el barajado falla.
-      const semilla = sala.juego === 'blackjack' ? nuevaSemilla() : null;
-      const reparto = semilla ? repartirInicial(orden, crearRng(semilla)) : null;
-      cambiarFase(sala, FASES.JUGANDO, { jugadorId: jugador.id, apuestasConfirmadas: sala.apuestas.length });
+      actualizarFaseSala(sala, FASES.JUGANDO, { jugadorId: jugador.id, apuestasConfirmadas: orden.length });
       sala.acciones.length = 0;
       sala.apuestaActual = 0;
       sala.puestas = {};
@@ -708,21 +630,11 @@ io.on('connection', (socket) => {
   socket.on('accion_blackjack', (datos, ack) => jugarTurno(socket, ack, 'blackjack', datos));
   socket.on('accion_poker', (datos, ack) => jugarTurno(socket, ack, 'poker', datos));
 
-  // El anfitrión abre la siguiente ronda; se apagan todos los relojes.
+  // El anfitrión abre la siguiente ronda; se apagan todos los relojes y se limpia la mesa.
   socket.on('nueva_ronda', (datos, ack) => {
     atender(socket, ack, () => {
       const { sala, jugador } = contextoDeSala(socket);
-      if (!fasePermiteAccion(sala.fase, 'nueva_ronda')) {
-        throw error('FASE_INVALIDA', 'La siguiente ronda se abre desde los resultados.');
-      }
-
-      cancelarTurnos(sala, 'nueva_ronda');
-      abrirNuevaRonda(sala, jugador.id); // limpia temporizadores, apuestas y resultado, y suma una ronda
-      sala.acciones.length = 0;
-      sala.apuestaActual = 0;
-      sala.puestas = {};
-      sala.bote = 0;
-      sala.turnos = null;
+      iniciarSiguienteRonda(sala, jugador.id);
 
       difundirEstado(sala);
       return { fase: sala.fase, numeroRonda: sala.numero_ronda };
@@ -730,8 +642,7 @@ io.on('connection', (socket) => {
   });
 
   socket.on('chat', (datos, ack) => {
-    const codigo = socket.data.codigoSala;
-    const sala = codigo ? salas.get(codigo) : null;
+    const sala = salas.salaDeJugador(socket.id);
     const jugador = sala ? sala.jugadores.get(socket.id) : null;
     const texto = typeof (datos && datos.texto) === 'string' ? datos.texto.trim() : '';
 
@@ -749,7 +660,8 @@ io.on('connection', (socket) => {
       return;
     }
 
-    io.to(codigo).emit('chat_mensaje', {
+    jugador.ultimaActividad = Date.now();
+    io.to(sala.codigo).emit('chat_mensaje', {
       nombre: jugador.nombre,
       texto,
       hora: new Date().toISOString()
@@ -769,11 +681,8 @@ io.on('connection', (socket) => {
 
 function apagar(senal) {
   console.log(`\n${senal} recibido: cerrando MonteCristo…`);
-  // Se apagan los relojes de turno para no dejar temporizadores vivos al salir.
-  for (const sala of salas.values()) {
-    cancelarTurnos(sala, 'servidor_cerrando');
-    cancelarTemporizadores(sala);
-  }
+  // Se cierran las salas y se apagan los relojes para no dejar temporizadores vivos al salir.
+  salas.cerrarTodas('servidor_cerrando');
   io.close(() => {
     servidor.close(() => process.exit(0));
   });
@@ -785,8 +694,9 @@ if (require.main === module) {
     console.log(`MonteCristo escuchando en http://localhost:${PUERTO}`);
     console.log('Fichas 100 % virtuales; no hay dinero real.');
   });
+
   process.on('SIGINT', () => apagar('SIGINT'));
   process.on('SIGTERM', () => apagar('SIGTERM'));
 }
 
-module.exports = { servidor, io };
+module.exports = { app, servidor, io, salas };
