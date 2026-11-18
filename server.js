@@ -135,7 +135,18 @@ function abandonarSala(socket) {
     salida.sala.turnos.retirarJugador(socket.id, 'abandono');
   }
 
-  if (salida.sala && !salida.cerrada) difundirEstado(salida.sala);
+  if (!salida.sala) return salida;
+
+  if (salida.cerrada) {
+    // El último jugador se fue: la sala desaparece. Se avisa a quien queda
+    // escuchando el canal y al propio jugador que acaba de salir.
+    const aviso = { codigo: salida.sala.codigo, motivo: 'sala_vacia' };
+    io.to(codigo || salida.sala.codigo).emit('sala_cerrada', aviso);
+    socket.emit('sala_cerrada', aviso);
+  } else {
+    difundirEstado(salida.sala);
+  }
+
   return salida;
 }
 
@@ -525,9 +536,17 @@ io.on('connection', (socket) => {
     }
   });
 
+  // El jugador se va de la sala: se libera su asiento (o se cierra la sala si era
+  // el último) y el resto recibe el estado nuevo al instante.
   socket.on('salir_sala', (datos, ack) => {
-    abandonarSala(socket);
-    if (typeof ack === 'function') ack({ ok: true });
+    const salida = abandonarSala(socket);
+    if (typeof ack === 'function') {
+      ack({
+        ok: true,
+        codigo: salida.sala ? salida.sala.codigo : null,
+        salaCerrada: Boolean(salida.cerrada)
+      });
+    }
   });
 
   // -------------------------------------------------------------------------
