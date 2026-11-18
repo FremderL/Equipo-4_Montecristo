@@ -70,6 +70,7 @@ el resultado de una ronda se genera una sola vez, en el servidor, y todos los cl
 
 | Evento | Cuándo | Datos |
 | --- | --- | --- |
+| `bienvenida` | Al conectarse el navegador | `{ mensaje, socketId, fecha }` (se imprime también en consola) |
 | `estado_sala` | Al entrar y después de **cada** cambio | Sala completa (`lib/salas.js`): `id`, `codigo`, `juego`, `estado`, `fase`, `anfitrionId`, `capacidad`, `asientosLibres`, `apuestaMinima`, `numeroRonda`, `jugadores` (en orden de `asiento` 1–6, con `fichas`, `esAnfitrion` y `conectado`), `apuestas`, `bote`, `turno` y `resultado` (`null` hasta que se lanza) |
 | `ronda_iniciada` | Al lanzar o repartir | `{ numeroRonda, juego }` |
 | `cartas` | Solo al dueño de esas cartas | `{ cartas: [...] }`; en blackjack incluye también `numeroRonda` y `puntos` |
