@@ -22,6 +22,8 @@ const { FASES, cambiarFase, abrirNuevaRonda, fasePermiteAccion, cancelarTemporiz
 const { validarApuesta } = require('./lib/fichas.js');
 // Ticket 2: crear, buscar y actualizar jugadores pasa SIEMPRE por estas funciones.
 const jugadores = require('./lib/jugadores.js');
+// Ticket 4: cada ronda terminada se guarda en `historial_rondas`.
+const { registrarRondaTerminada } = require('./lib/historial.js');
 const { crearRelojDeTurnos, tiempoDeTurno } = require('./lib/turno.js');
 const { lanzarRonda, vistaDeApuesta, nuevaSemilla } = require('./lib/lanzamiento.js');
 const { crearRng } = require('./lib/rng.js');
@@ -353,11 +355,53 @@ function devolverApuestas(sala) {
   sala.puestas = {};
 }
 
+/**
+ * Ticket 4: guarda en `historial_rondas` la ronda que acaba de terminar, con
+ * una fila por jugador: sala, juego, jugador, apuesta, resultado y fecha.
+ *
+ * Solo se guardan las apuestas ya liquidadas de quien sigue en la sala. La
+ * partida nunca se interrumpe por el historial: si la base de datos falla, la
+ * ronda ya está liquidada en memoria y aquí solo se avisa por consola.
+ */
+function registrarHistorial(sala, opciones = {}) {
+  const apuestas = Array.isArray(opciones.apuestas) ? opciones.apuestas : sala.apuestas;
+  const numeroRonda = Number(opciones.numeroRonda) || sala.numero_ronda;
+
+  const liquidables = (apuestas || []).filter(
+    (apuesta) => apuesta
+      && typeof apuesta.resultado === 'string'
+      && sala.jugadores.has(apuesta.jugadorId)
+  );
+  if (liquidables.length === 0) return;
+
+  try {
+    const { insertadas } = registrarRondaTerminada({
+      salaCodigo: sala.codigo,
+      juego: sala.juego,
+      numeroRonda,
+      jugadores: liquidables.map((apuesta) => ({
+        jugadorId: apuesta.jugadorId,
+        nombre: apuesta.nombre || sala.jugadores.get(apuesta.jugadorId).nombre,
+        apuesta: apuesta.monto,
+        opcion: apuesta.opcion,
+        resultado: apuesta.resultado,
+        pago: apuesta.pago
+      }))
+    });
+    console.log(`🗂️  Historial: ronda ${numeroRonda} de la sala ${sala.codigo} guardada (${insertadas} fila(s)).`);
+  } catch (fallo) {
+    console.warn(`⚠️  Historial: no se pudo guardar la ronda ${numeroRonda} de la sala ${sala.codigo}: ${fallo.message}`);
+  }
+}
+
 /** Todos resolvieron su turno: se cierra la mano y la sala pasa a resultados. */
 function cerrarMano(sala, motivo) {
   if (sala.fase === FASES.JUGANDO) {
     devolverApuestas(sala);
     cambiarFase(sala, FASES.RESULTADOS, { servidor: true });
+    // Blackjack y póker: en cuanto la mano tenga pagos por jugador, la ronda
+    // queda registrada igual que las de los juegos rápidos.
+    registrarHistorial(sala);
   }
   io.to(sala.codigo).emit('turno', turnoSinJugador(sala, motivo || 'mano_cerrada'));
   difundirEstado(sala);
@@ -684,9 +728,9 @@ io.on('connection', (socket) => {
       // segundo `lanzar` no vuelve a liquidar (RONDA_LIQUIDADA).
       const ronda = lanzarRonda(sala, motor, { jugadorId: jugador.id });
 
-      // PUNTO DE EXTENSIÓN: aquí se guarda la ronda terminada (historial y
-      // estadísticas) cuando exista ese registro; `ronda.apuestas` ya trae
-      // jugador, apuesta, opción, resultado y pago.
+      // La ronda ya está liquidada: se guarda en `historial_rondas` (historial
+      // y estadísticas) antes de avisar a la sala.
+      registrarHistorial(sala, { numeroRonda: ronda.numeroRonda, apuestas: ronda.apuestas });
       io.to(sala.codigo).emit('ronda_iniciada', { numeroRonda: ronda.numeroRonda, juego: ronda.juego });
       io.to(sala.codigo).emit('resultado', ronda);
       difundirEstado(sala);

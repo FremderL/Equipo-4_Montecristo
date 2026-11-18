@@ -118,6 +118,17 @@ cruzar `partidas` ni `apuestas`.
   elimine (en las tablas activas ambos se borran con `CASCADE`).
 - `UNIQUE (sala_codigo, numero_ronda, jugador_id)` impide duplicar una ronda: repetir la llamada
   devuelve la fila ya guardada en lugar de insertar otra.
+- **Quién la llena:** el servidor, justo después de liquidar la ronda (`lanzar` en los juegos
+  rápidos y `cerrarMano` en blackjack y póker). Si la base de datos falla, la partida sigue: la
+  ronda ya está pagada en memoria y solo se avisa por consola.
+
+Consultas de lectura de `lib/historial.js` (ya no hace falta escribir SQL para el historial):
+
+| Función | Devuelve |
+| --- | --- |
+| `historialDeJugador(jugadorId, { limite, juego })` | Sus últimas rondas, de la más reciente a la más antigua |
+| `historialDeSala(salaCodigo, { limite })` | Todas las rondas terminadas de una mesa |
+| `estadisticasDeJugador(jugadorId)` | `rondas`, `ganadas`, `perdidas`, `empatadas`, `apostado`, `cobrado`, `neto` y el desglose `porJuego` |
 
 ---
 

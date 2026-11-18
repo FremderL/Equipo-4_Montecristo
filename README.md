@@ -385,6 +385,19 @@ sobre la tabla `jugadores` en ningún otro archivo. Las fichas se mueven con las
 | `actualizarNombreJugador` · `actualizarAvatarJugador` · `actualizarSaldoJugador` | Atajos de un solo campo. |
 | `ajustarSaldoJugador(id, delta)` | Suma o resta fichas de forma atómica; nunca deja el saldo en negativo. |
 
+## Historial y estadísticas
+
+Cada ronda terminada deja **una fila por jugador** en `historial_rondas` (sala, juego, jugador,
+apuesta, resultado y fecha). La inserta `registrarRondaTerminada()` de `lib/historial.js` en cuanto
+la ronda pasa a `resultados`, y es idempotente: repetir la llamada no duplica filas.
+
+```js
+const { historialDeJugador, estadisticasDeJugador } = require('./lib/historial.js');
+
+historialDeJugador('p_ana', { limite: 10 });     // últimas rondas de Ana
+estadisticasDeJugador('p_ana');                  // rondas, ganadas, apostado, cobrado, neto…
+```
+
 ---
 
 ## Documentación
