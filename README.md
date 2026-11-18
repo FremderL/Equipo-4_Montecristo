@@ -351,8 +351,16 @@ montecristo/
 │  ├─ index.html
 │  ├─ styles.css
 │  └─ app.js
+├─ db/
+│  ├─ schema.sql          # DDL idempotente: jugadores, salas, partidas, apuestas, historial_rondas
+│  └─ migrar.js           # npm run db:migrar
 ├─ lib/
 │  ├─ reglas.js           # constantes y tabla de pagos (DOC-02)
+│  ├─ db.js               # conexión única a SQLite (better-sqlite3)
+│  ├─ esquema.js          # aplica db/schema.sql una sola vez por conexión
+│  ├─ jugadores.js        # crear · buscar por id · actualizar nombre, avatar y saldo
+│  ├─ fichas.js           # apuestas, pagos y reembolsos (usa lib/jugadores.js)
+│  ├─ historial.js        # historial_rondas: registrar la ronda terminada
 │  ├─ codigo-sala.js      # generación y validación de códigos de sala
 │  ├─ rng.js              # generador aleatorio con semilla
 │  ├─ turno.js            # reloj de turno: decide por quien no responde
@@ -363,6 +371,35 @@ montecristo/
 ├─ data/                  # snapshot JSON (opcional)
 ├─ docs/                  # documentación del proyecto (01–05)
 └─ tests/                 # pruebas con los casos de DOC-02
+```
+
+---
+
+## Jugadores: una sola puerta de entrada
+
+Todo el código que necesite jugadores pasa por **`lib/jugadores.js`**; no hay consultas sueltas
+sobre la tabla `jugadores` en ningún otro archivo. Las fichas se mueven con las mismas funciones
+(`ajustarSaldoJugador`), así que el saldo nunca se descuadra entre módulos.
+
+| Función | Qué hace |
+| --- | --- |
+| `crearJugador({ id?, nombre, avatar?, saldo? })` | Inserta la fila con avatar `🙂` y 1.000 fichas por defecto. |
+| `buscarJugadorPorId(id)` | Devuelve el jugador o `null`. |
+| `actualizarJugador(id, { nombre?, avatar?, saldo? })` | Actualiza los campos indicados y devuelve el jugador. |
+| `actualizarNombreJugador` · `actualizarAvatarJugador` · `actualizarSaldoJugador` | Atajos de un solo campo. |
+| `ajustarSaldoJugador(id, delta)` | Suma o resta fichas de forma atómica; nunca deja el saldo en negativo. |
+
+## Historial y estadísticas
+
+Cada ronda terminada deja **una fila por jugador** en `historial_rondas` (sala, juego, jugador,
+apuesta, resultado y fecha). La inserta `registrarRondaTerminada()` de `lib/historial.js` en cuanto
+la ronda pasa a `resultados`, y es idempotente: repetir la llamada no duplica filas.
+
+```js
+const { historialDeJugador, estadisticasDeJugador } = require('./lib/historial.js');
+
+historialDeJugador('p_ana', { limite: 10 });     // últimas rondas de Ana
+estadisticasDeJugador('p_ana');                  // rondas, ganadas, apostado, cobrado, neto…
 ```
 
 ---

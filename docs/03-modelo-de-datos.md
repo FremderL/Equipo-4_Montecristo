@@ -118,6 +118,17 @@ cruzar `partidas` ni `apuestas`.
   elimine (en las tablas activas ambos se borran con `CASCADE`).
 - `UNIQUE (sala_codigo, numero_ronda, jugador_id)` impide duplicar una ronda: repetir la llamada
   devuelve la fila ya guardada en lugar de insertar otra.
+- **Quién la llena:** el servidor, justo después de liquidar la ronda (`lanzar` en los juegos
+  rápidos y `cerrarMano` en blackjack y póker). Si la base de datos falla, la partida sigue: la
+  ronda ya está pagada en memoria y solo se avisa por consola.
+
+Consultas de lectura de `lib/historial.js` (ya no hace falta escribir SQL para el historial):
+
+| Función | Devuelve |
+| --- | --- |
+| `historialDeJugador(jugadorId, { limite, juego })` | Sus últimas rondas, de la más reciente a la más antigua |
+| `historialDeSala(salaCodigo, { limite })` | Todas las rondas terminadas de una mesa |
+| `estadisticasDeJugador(jugadorId)` | `rondas`, `ganadas`, `perdidas`, `empatadas`, `apostado`, `cobrado`, `neto` y el desglose `porJuego` |
 
 ---
 
@@ -143,24 +154,44 @@ Reglas que el diagrama no dibuja pero el código debe cumplir:
 
 ## 4. Implementación en memoria (v1)
 
-```js
-// Estructuras del servidor (Map = tabla)
-const salas     = new Map(); // id  -> sala
-const jugadores = new Map(); // id  -> jugador
-const partidas  = new Map(); // id  -> partida   (se poda a las últimas 20 por sala)
-const apuestas  = new Map(); // id  -> apuesta
+Implementada en `lib/salas.js` y usada por `server.js` (`crearSala`, `sentarJugador`,
+`retirarJugador`, `transferirAnfitrion`, `actualizarFaseSala`, `estadoDeSala` y
+`crearAlmacenSalas`).
 
-// Una sala en memoria se ve así:
+```js
+// Almacén autoritativo del servidor (lib/salas.js)
+const salas = crearAlmacenSalas({ maxSalas: 50 }); // codigo -> sala activa
+
+// Una sala en memoria (crearSala) guarda juego, jugadores sentados, anfitrión y fase:
 {
   id: 's_K7Q2M',
   codigo: 'K7Q2M',
-  juego: 'roulette',
-  anfitrionId: 'p_7f3a91',
+  juego: 'roulette',           // inmutable tras crear la sala
   capacidad: 6,
-  fase: 'apuestas',
   apuestaMinima: 10,
-  jugadores: ['p_7f3a91', 'p_2b8c04'], // hasta 6 ids, en orden de asiento
-  rondaActual: 'r_0042',
+  estado: 'abierta',           // 'abierta' | 'cerrada'
+  fase: 'apuestas',            // 'espera' -> 'apuestas' -> 'jugando' -> 'resultados'
+  numero_ronda: 1,
+  anfitrionId: 'p_7f3a91',     // siempre un jugador sentado (null al cerrarse)
+  jugadores: Map {             // hasta 6 jugadores con asiento único (1..6)
+    'p_7f3a91' => {
+      id: 'p_7f3a91', nombre: 'Ana', avatar: '🦊', fichas: 1000,
+      salaId: 's_K7Q2M', asiento: 1, esAnfitrion: true, conectado: true,
+      creadoEn: 1760475000000, ultimaActividad: 1760476931000
+    }
+  },
+  apuestas: [],
+  apuestasConfirmadas: 0,
+  manos: [],
+  resultado: null,
+  semillaRng: null,
+  acciones: [],
+  apuestaActual: 0,
+  puestas: {},
+  bote: 0,
+  turnos: null,
+  temporizadores: Set {},
+  tareasPendientes: [],
   creadaEn: 1760475000000,
   actualizadaEn: 1760476931000
 }
