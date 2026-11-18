@@ -17,16 +17,20 @@ const http = require('node:http');
 const express = require('express');
 const { Server } = require('socket.io');
 const { REGLAS } = require('./lib/reglas.js');
+const { generarCodigoSala, normalizarCodigoSala } = require('./lib/codigo-sala.js');
 const { FASES, cambiarFase, abrirNuevaRonda, fasePermiteAccion, cancelarTemporizadores, esAnfitrion } = require('./lib/ronda.js');
 const { validarApuesta } = require('./lib/fichas.js');
 const { crearRelojDeTurnos, tiempoDeTurno } = require('./lib/turno.js');
 const { lanzarRonda, vistaDeApuesta, nuevaSemilla } = require('./lib/lanzamiento.js');
 const { crearRng } = require('./lib/rng.js');
 const coinflip = require('./lib/juegos/coinflip.js');
+const roulette = require('./lib/juegos/roulette.js');
 const { contarPuntos, repartirInicial, vistaDeCasa } = require('./lib/juegos/blackjack.js');
 
-const PUERTO = Number(process.env.PORT) || 3000;
+const PUERTO_POR_DEFECTO = 3000;
+const PUERTO = Number(process.env.PORT) || PUERTO_POR_DEFECTO;
 const HOST = process.env.HOST || '0.0.0.0';
+const RUTA_PUBLIC = path.join(__dirname, 'public');
 const MAX_SALAS = Number(process.env.MAX_SALAS) > 0 ? Number(process.env.MAX_SALAS) : 50;
 const JUEGOS = ['coinflip', 'dice', 'roulette', 'blackjack', 'poker'];
 
@@ -427,7 +431,7 @@ const servidor = http.createServer(app);
 const io = new Server(servidor);
 
 app.disable('x-powered-by');
-app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.static(RUTA_PUBLIC));
 
 app.get('/health', (req, res) => {
   res.json({ ok: true });
@@ -789,4 +793,4 @@ if (require.main === module) {
   process.on('SIGTERM', () => apagar('SIGTERM'));
 }
 
-module.exports = { servidor, io };
+module.exports = { app, servidor, io, PUERTO, PUERTO_POR_DEFECTO, RUTA_PUBLIC };
