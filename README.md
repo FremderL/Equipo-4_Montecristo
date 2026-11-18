@@ -36,8 +36,9 @@ en tiempo real. Una persona crea una sala, comparte un enlace o un código de 5 
   atorada esperando a una persona.
 - **Servidor autoritativo**: los resultados (moneda, dado, ruleta y cartas) los genera y liquida el
   servidor; el navegador solo los muestra.
-- **Fichas virtuales**: cada jugador empieza con **1.000 fichas**, la apuesta mínima es **10** y los
-  pagos siguen la tabla de [`docs/02-reglas-y-pagos.md`](docs/02-reglas-y-pagos.md).
+- **Fichas virtuales**: cada perfil nuevo empieza con **1.000 fichas**. El saldo final de cada
+  ronda se guarda en SQLite y se recupera al volver a entrar desde el mismo navegador. La apuesta
+  mínima es **10** y los pagos siguen [`docs/02-reglas-y-pagos.md`](docs/02-reglas-y-pagos.md).
 - **Chat de sala** para hablar mientras se juega.
 - **Sin registro**: solo hace falta un nombre y un avatar; no se pide correo ni contraseña.
 
@@ -73,13 +74,12 @@ Las reglas completas, los multiplicadores y los casos de prueba están en
 | Tiempo real | **Socket.IO** | 4.x | WebSocket: salas, eventos y difusión de estado |
 | Cliente | **HTML5 + CSS3 + JavaScript** (vanilla, sin framework) | — | Interfaz y animaciones (canvas para la ruleta) |
 | Pruebas | **node:test** (incluido en Node) | — | Pruebas unitarias de reglas y pagos |
-| Persistencia | **Memoria + archivo JSON** (opcional) | — | Estado de salas y jugadores; **no requiere base de datos** |
+| Persistencia | **SQLite** (`better-sqlite3`) | 11.x | Perfiles, saldos e historial; las salas activas viven en memoria |
 | Control de versiones | **Git + GitHub** | — | Repositorio y trabajo en equipo |
 
-> La v1 **no usa base de datos** a propósito: cualquiera del equipo puede clonar el repo y
-> ejecutarlo sin instalar ni configurar nada más. El modelo de datos está documentado como esquema
-> relacional en [`docs/03-modelo-de-datos.md`](docs/03-modelo-de-datos.md), listo para migrar a
-> PostgreSQL más adelante.
+> No se necesita una base de datos externa. SQLite usa `data/casino.db` (o la ruta de `DB_FILE`)
+> y conserva los saldos al reiniciar si se vuelve a usar el mismo archivo. Las salas activas no
+> se restauran. El esquema está documentado en [`docs/03-modelo-de-datos.md`](docs/03-modelo-de-datos.md).
 
 ---
 
@@ -238,8 +238,8 @@ Para detener el servidor pulsa `Ctrl + C` en la terminal.
 
 ## Despliegue en Render
 
-La v1 guarda el estado en memoria y no requiere base de datos gestionada. El repositorio incluye
-`render.yaml`, que describe el **Web Service Node.js** que Render crea al conectar el repositorio.
+La v1 usa SQLite para perfiles, saldos e historial, sin una base de datos gestionada. El repositorio
+incluye `render.yaml`, que describe el **Web Service Node.js** que Render crea al conectar el repositorio.
 
 ### Cómo desplegar
 
@@ -263,8 +263,8 @@ Render asigna `PORT` automáticamente. El blueprint define `NODE_ENV=production`
 `DB_FILE` queda en `data/casino.db` (efímero en plan free).
 
 > **Free vs pago:** el plan `free` (Hobby) apaga la instancia tras 15 min sin tráfico y no admite
-> discos persistentes. La v1 funciona así porque guarda el estado en memoria. Para producción
-> (plan `starter`/`profesional`), activa el disco persistente en `/data` con `DB_FILE=/data/casino.db`;
+> discos persistentes. Los perfiles, saldos e historial se pierden cuando Render descarta el archivo
+> SQLite. Para conservarlos en producción, activa un disco persistente en `/data` con `DB_FILE=/data/casino.db`;
 > ver [`docs/05-despliegue-render.md`](docs/05-despliegue-render.md).
 
 ### Evidencia del ticket
@@ -362,9 +362,8 @@ montecristo/
 │  ├─ turno.js            # reloj de turno: decide por quien no responde
 │  ├─ lanzamiento.js      # juegos rápidos: lanzar, liquidar y pasar a resultados
 │  ├─ salas.js            # estado en memoria (DOC-03)
-│  ├─ snapshot.js         # data/estado.json
 │  └─ juegos/             # motores implementados: coinflip y roulette
-├─ data/                  # base SQLite (data/casino.db) y snapshot JSON
+├─ data/                  # base SQLite (data/casino.db)
 ├─ docs/                  # documentación del proyecto (01–05)
 └─ tests/                 # pruebas con los casos de DOC-02
 ```
@@ -374,22 +373,24 @@ montecristo/
 ## Jugadores: una sola puerta de entrada
 
 Todo el código que necesite jugadores pasa por **`lib/jugadores.js`**; no hay consultas sueltas
-sobre la tabla `jugadores` en ningún otro archivo. Las fichas se mueven con las mismas funciones
-(`ajustarSaldoJugador`), así que el saldo nunca se descuadra entre módulos.
+sobre la tabla `jugadores` en ningún otro módulo. En las salas, las apuestas descuentan fichas en
+memoria. Al cerrar la ronda, el servidor guarda los saldos finales en una transacción de SQLite.
+Al crear o entrar en una sala, carga el saldo guardado del perfil sin volver a entregar las 1.000 fichas.
 
 | Función | Qué hace |
 | --- | --- |
-| `crearJugador({ id?, nombre, avatar?, saldo? })` | Inserta la fila con avatar `🙂` y 1.000 fichas por defecto. |
-| `buscarJugadorPorId(id)` | Devuelve el jugador o `null`. |
+| `crearJugador({ id?, nombre, avatar?, saldo?, deviceId? })` | Inserta la fila con avatar `🙂` y 1.000 fichas por defecto. |
+| `buscarJugadorPorId(id)` · `buscarJugadorPorDispositivo(deviceId)` | Devuelven el jugador o `null`. |
 | `actualizarJugador(id, { nombre?, avatar?, saldo? })` | Actualiza los campos indicados y devuelve el jugador. |
 | `actualizarNombreJugador` · `actualizarAvatarJugador` · `actualizarSaldoJugador` | Atajos de un solo campo. |
 | `ajustarSaldoJugador(id, delta)` | Suma o resta fichas de forma atómica; nunca deja el saldo en negativo. |
+| `actualizarSaldosJugadores([{ id, saldo }, ...])` | Guarda juntos los saldos finales de los jugadores. |
 
 ## Historial y estadísticas
 
-Cada ronda terminada deja **una fila por jugador** en `historial_rondas` (sala, juego, jugador,
-apuesta, resultado y fecha). La inserta `registrarRondaTerminada()` de `lib/historial.js` en cuanto
-la ronda pasa a `resultados`, y es idempotente: repetir la llamada no duplica filas.
+Las apuestas con resultado definitivo dejan **una fila por jugador y ronda** en `historial_rondas`
+(sala, juego, jugador, apuesta, resultado y fecha). La inserta `registrarRondaTerminada()` de
+`lib/historial.js` en cuanto la ronda pasa a `resultados`; repetir la llamada no duplica filas.
 
 ```js
 const { historialDeJugador, estadisticasDeJugador } = require('./lib/historial.js');
@@ -422,7 +423,7 @@ estadisticasDeJugador('p_ana');                  // rondas, ganadas, apostado, c
 | La página carga pero dice «Desconectado» | Revisa que el servidor siga encendido y que no haya un bloqueador/proxy cerrando el WebSocket. |
 | Mis amigos no pueden entrar desde otra red | Necesitas exponer el puerto (ngrok o similar) o desplegar el servidor en un hosting. |
 | El navegador muestra una versión vieja de la página | Recarga con `Ctrl + Shift + R` (Windows/Linux) o `Cmd + Shift + R` (macOS). |
-| Las fichas volvieron a 1.000 al reiniciar | Es el comportamiento por defecto; activa `GUARDAR_ESTADO=true` para conservarlas. |
+| Las fichas volvieron a 1.000 | Comprueba que estás en el mismo navegador y que el servidor conserva el mismo archivo SQLite (`DB_FILE`). Borrar los datos del sitio o abrirlo en incógnito crea otro perfil. |
 | La mesa se queda esperando a alguien que no responde | No debería: a los 25 s (blackjack) o 30 s (póker) el servidor juega por esa persona y sigue. Para comprobarlo rápido arranca con `TIEMPO_TURNO_BLACKJACK_MS=5000 npm start`. |
 
 Si algo no está en esta lista, abre un *issue* en el repositorio con el sistema operativo, la
