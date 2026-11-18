@@ -163,7 +163,7 @@ Cualquier persona que se unió a la sala y ocupa un asiento.
 | Saldo negativo | Imposible | El servidor rechaza apostar más de lo que se tiene |
 | Tiempo de turno | **25 s** en blackjack · **30 s** en póker | Juegos rápidos: sin reloj |
 | Inactividad en el turno | Blackjack: se planta · Póker: pasa si puede, si no se retira | Lo ejecuta el servidor |
-| Baraja | Blackjack: 4 barajas (208 cartas) · Póker: 1 baraja (52 cartas) | Se rebaraja al quedarse corta |
+| Baraja | Blackjack y póker: 1 baraja de 52 cartas | En blackjack se baraja al inicio de cada ronda |
 | Resultados | Los decide **el servidor** | El cliente solo anima el resultado recibido |
 | Privacidad de cartas | Cada cliente recibe únicamente las suyas | En póker y blackjack |
 | Chat | Texto libre + mensajes rápidos, solo dentro de la sala | Máximo 200 caracteres por mensaje |

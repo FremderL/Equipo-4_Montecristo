@@ -205,6 +205,25 @@ El anfitrión lanza un solo giro para toda la sala. Si sale cero, el resultado d
 `{ numero: 0, color: 'verde' }` y la apuesta del ejemplo cobra **3.600** fichas
 (**+3.500** netas). Si sale otro número, la apuesta cobra 0.
 
+### 8. Probar el reparto inicial de blackjack
+
+Desde la consola del navegador en la página de MonteCristo, con el servidor encendido:
+
+```js
+const mesa21 = io();
+mesa21.on('cartas', ({ cartas, puntos }) => console.log('Tu mano:', cartas, puntos));
+mesa21.on('estado_sala', ({ casa }) => { if (casa) console.log('Casa:', casa.cartas, casa.puntos); });
+await mesa21.emitWithAck('crear_sala', { nombre: 'Ana', avatar: '🦊', juego: 'blackjack' });
+await mesa21.emitWithAck('comenzar');
+await mesa21.emitWithAck('apostar', { monto: 10, opcion: 'mano' });
+await mesa21.emitWithAck('repartir');
+```
+
+Cada jugador con apuesta recibe dos cartas en privado. En la mano pública de la casa, `null`
+representa la carta tapada: durante los turnos solo se cuentan los puntos visibles. Cuando todos
+se plantan (o vence su reloj), la casa muestra su segunda carta y su total. Este reparto no
+implementa las jugadas adicionales ni la liquidación de blackjack.
+
 ### Modo desarrollo
 
 ```bash

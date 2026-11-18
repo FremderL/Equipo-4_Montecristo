@@ -34,9 +34,9 @@ test('semilla reproduce la secuencia', () => {
 });
 
 test('mazos, cartas sin reposición y umbral de rebarajado', () => {
-  const blackjack = crearMazo(4, crearRng('blackjack'));
-  assert.equal(blackjack.length, 208);
-  assert.equal(new Set(blackjack).size, 52);
+  const cuatroBarajas = crearMazo(4, crearRng('varias-barajas'));
+  assert.equal(cuatroBarajas.length, 208);
+  assert.equal(new Set(cuatroBarajas).size, 52);
   const poker = crearMazo(1, crearRng('poker'));
   assert.equal(poker.length, 52);
   const carta = sacarCarta(poker);
