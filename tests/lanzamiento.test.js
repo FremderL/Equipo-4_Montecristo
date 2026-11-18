@@ -6,6 +6,7 @@ const { FASES, cambiarFase, abrirNuevaRonda, fasePermiteAccion } = require('../l
 const { validarApuesta } = require('../lib/fichas.js');
 const { crearRng } = require('../lib/rng.js');
 const coinflip = require('../lib/juegos/coinflip.js');
+const roulette = require('../lib/juegos/roulette.js');
 const { lanzarRonda, liquidarApuesta, vistaDeApuesta, nuevaSemilla } = require('../lib/lanzamiento.js');
 
 // Generadores fijos: la moneda cae en cara con la mitad baja y en cruz con la alta.
@@ -13,10 +14,10 @@ const CARA = () => 0;
 const CRUZ = () => 0.99;
 
 /** Sala en memoria como la arma server.js; el primer nombre es el anfitrión. */
-function mesa(nombres = ['ana', 'bruno'], { comenzar = true } = {}) {
+function mesa(nombres = ['ana', 'bruno'], { comenzar = true, juego = coinflip.JUEGO } = {}) {
   const sala = {
     codigo: 'K7Q2M',
-    juego: 'coinflip',
+    juego,
     fase: FASES.ESPERA,
     anfitrionId: nombres[0],
     numero_ronda: 1,
@@ -37,15 +38,16 @@ function mesa(nombres = ['ana', 'bruno'], { comenzar = true } = {}) {
 }
 
 /** Lo mismo que el evento `apostar`: valida, descuenta del saldo y deja la apuesta en la mesa. */
-function apostar(sala, jugadorId, monto, opcion) {
+function apostar(sala, jugadorId, monto, opcion, motor = coinflip) {
   const jugador = sala.jugadores.get(jugadorId);
   const yaAposto = sala.apuestas.some((apuesta) => apuesta.jugadorId === jugadorId);
   assert.equal(fasePermiteAccion(sala.fase, 'apostar'), true, 'las apuestas están abiertas');
   assert.deepEqual(validarApuesta(jugador.fichas, monto, yaAposto), { ok: true });
-  assert.equal(coinflip.validarOpcion(opcion).ok, true);
+  const revision = motor.validarOpcion(opcion);
+  assert.equal(revision.ok, true);
 
   jugador.fichas -= monto;
-  sala.apuestas.push({ jugadorId, nombre: jugador.nombre, monto, opcion, confirmadaEn: Date.now() });
+  sala.apuestas.push({ jugadorId, nombre: jugador.nombre, monto, opcion: revision.opcion, confirmadaEn: Date.now() });
   sala.apuestasConfirmadas = sala.apuestas.length;
   sala.bote += monto;
 }
@@ -103,6 +105,36 @@ test('una sola moneda para toda la sala: todos se liquidan con el mismo resultad
   );
   assert.deepEqual(saldos(sala), { ana: 900, bruno: 1250, carla: 1010, dario: 1000 }, 'quien no apuesta no gana ni pierde');
   assert.deepEqual(sala.apuestas.map(vistaDeApuesta), ronda.apuestas, 'estado_sala y el evento resultado cuentan lo mismo');
+});
+
+test('ruleta: un único giro con cero paga solo al pleno 0', () => {
+  const nombres = ['ana', 'bruno', 'carla', 'dario', 'elena', 'fer'];
+  const sala = mesa(nombres, { juego: roulette.JUEGO });
+  const opciones = [' N:0 ', 'rojo', 'negro', 'par', 'impar'];
+  opciones.forEach((opcion, indice) => apostar(sala, nombres[indice], 100, opcion, roulette));
+  assert.deepEqual(saldos(sala), { ana: 900, bruno: 900, carla: 900, dario: 900, elena: 900, fer: 1000 });
+
+  let giros = 0;
+  const ronda = lanzarRonda(sala, roulette, {
+    jugadorId: 'ana',
+    rng: () => { giros += 1; return 0; }
+  });
+
+  assert.equal(giros, 1);
+  assert.equal(ronda.juego, 'roulette');
+  assert.deepEqual(ronda.resultado, { numero: 0, color: 'verde' });
+  assert.deepEqual(
+    ronda.apuestas.map(({ opcion, multiplicador, pago, neto, resultado }) => [opcion, multiplicador, pago, neto, resultado]),
+    [
+      ['n:0', 36, 3600, 3500, 'gana'],
+      ['rojo', 0, 0, -100, 'pierde'],
+      ['negro', 0, 0, -100, 'pierde'],
+      ['par', 0, 0, -100, 'pierde'],
+      ['impar', 0, 0, -100, 'pierde']
+    ]
+  );
+  assert.deepEqual(saldos(sala), { ana: 4500, bruno: 900, carla: 900, dario: 900, elena: 900, fer: 1000 });
+  assert.equal(sala.fase, FASES.RESULTADOS);
 });
 
 test('no hace falta que haya apuestas en los dos lados, ni que el anfitrión apueste', () => {

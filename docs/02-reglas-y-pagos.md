@@ -51,7 +51,7 @@ ganancia  = pago − apuesta                       ← fichas que realmente gana
 | `TIEMPO_TURNO_POKER_MS` | `30000` | Reloj de turno |
 | `CIEGA_PEQUENA` | `10` | Texas Hold'em |
 | `CIEGA_GRANDE` | `20` | Texas Hold'em · subida mínima |
-| `MAZOS_BLACKJACK` | `4` (208 cartas) | Blackjack |
+| `MAZOS_BLACKJACK` | `1` (52 cartas) | Blackjack |
 | `MAZOS_POKER` | `1` (52 cartas) | Texas Hold'em |
 | `REBARAJAR_SI_QUEDAN_MENOS_DE` | `52` | Blackjack y póker |
 | `PLANTARSE_CASA` | `17` | Blackjack (la casa se planta con 17, duro o blando) |
@@ -69,7 +69,7 @@ const REGLAS = {
   TIEMPO_TURNO_POKER_MS: 30_000,
   CIEGA_PEQUENA: 10,
   CIEGA_GRANDE: 20,
-  MAZOS_BLACKJACK: 4,
+  MAZOS_BLACKJACK: 1,
   MAZOS_POKER: 1,
   REBARAJAR_SI_QUEDAN_MENOS_DE: 52,
   PLANTARSE_CASA: 17,
@@ -179,7 +179,9 @@ anfitrión reparte y cada quien decide por turno.
 - La casa **pide carta con 16 o menos** y **se planta con 17 o más**, incluido el 17 blando.
 - Si la casa tiene **blackjack natural**, los jugadores pierden su apuesta **excepto** quien
   también tenga natural, que empata (×1).
-- Mazo de **4 barajas**; se rebaraja antes de repartir si quedan menos de **52 cartas**.
+- Al inicio de cada ronda se baraja **un mazo de 52 cartas**, sin comodines. Se dan dos vueltas:
+  una carta a cada jugador con apuesta y una a la casa por vuelta, sin reposición. La segunda
+  carta de la casa queda tapada y no cuenta en los puntos visibles hasta el cierre de la mano.
 
 ### Jugadas del participante
 

@@ -3,10 +3,11 @@
 // MonteCristo · servidor Express + Socket.IO
 // Implementa lo descrito en docs/04-arquitectura.md:
 //   - sirve la interfaz de public/
-//   - expone /health, /api/salas y /api/salas/:codigo
+//   - expone /health, /api/salas, /api/salas/:codigo y los enlaces /sala/:codigo
 //   - mantiene las salas en memoria y atiende crear_sala / entrar_sala / salir_sala / chat
 //   - lanza los juegos rápidos: el anfitrión manda `lanzar` y el servidor genera el
 //     resultado y paga a toda la sala (Cara o Cruz: ×2 a quien acierta)
+//   - reparte blackjack con un mazo por ronda; solo el dueño recibe su mano y sus puntos
 //   - corre el reloj de turno: si el jugador no responde, el servidor decide por él
 //     (blackjack: se planta · póker: pasa si puede, si no se retira) y la partida sigue
 // El servidor es autoritativo: el navegador solo envía intenciones.
@@ -32,6 +33,7 @@ const {
   crearAlmacenSalas
 } = require('./lib/salas.js');
 const coinflip = require('./lib/juegos/coinflip.js');
+const { contarPuntos, repartirInicial, vistaDeCasa } = require('./lib/juegos/blackjack.js');
 
 function enteroPositivo(valor, predeterminado) {
   const numero = Number(valor);
@@ -42,12 +44,11 @@ const PUERTO = Number(process.env.PORT) || 3000;
 const HOST = process.env.HOST || '0.0.0.0';
 const MAX_SALAS = enteroPositivo(process.env.MAX_SALAS, MAX_SALAS_POR_DEFECTO);
 
-/**
- * Juegos rápidos con motor listo (lib/juegos/*.js): un solo lanzamiento y
- * liquidación inmediata para toda la sala. Dados y ruleta se registran aquí
- * cuando llegue su ticket; el evento `lanzar` no cambia.
- */
-const MOTORES_RAPIDOS = new Map([[coinflip.JUEGO, coinflip]]);
+/** Juegos rápidos con motor listo: un lanzamiento y una liquidación para toda la sala. */
+const MOTORES_RAPIDOS = new Map([
+  [coinflip.JUEGO, coinflip],
+  [roulette.JUEGO, roulette]
+]);
 
 /**
  * Límites de turno de DOC-02 (25 s blackjack · 30 s póker). Se pueden acortar
@@ -77,9 +78,70 @@ function error(codigo, mensaje) {
   return fallo;
 }
 
-/** Vista pública de la sala: nunca incluye datos privados de otros sockets ni semillas. */
-function estadoPublico(sala) {
-  return estadoDeSala(sala, { limiteTurnoMs: limiteDeTurno(sala.juego) });
+function validarNombre(nombre) {
+  if (typeof nombre !== 'string') throw error('NOMBRE_INVALIDO', 'Escribe tu nombre para continuar.');
+
+  const limpio = nombre.trim();
+  if (limpio.length === 0) throw error('NOMBRE_INVALIDO', 'Escribe tu nombre para continuar.');
+  if (limpio.length > 24) throw error('NOMBRE_INVALIDO', 'El nombre puede tener como máximo 24 caracteres.');
+  return limpio;
+}
+
+function validarAvatar(avatar) {
+  if (typeof avatar !== 'string' || avatar.trim().length === 0) {
+    throw error('AVATAR_INVALIDO', 'Selecciona un avatar antes de continuar.');
+  }
+  return avatar.trim().slice(0, 8);
+}
+
+function validarJuego(juego) {
+  if (!JUEGOS.includes(juego)) {
+    throw error('JUEGO_INVALIDO', 'Elige uno de los juegos disponibles para crear la sala.');
+  }
+  return juego;
+}
+
+function jugadoresDeSala(sala) {
+  return Array.from(sala.jugadores.values());
+}
+
+/** Vista pública de la sala: nunca incluye datos privados de otros sockets. */
+function estadoDeSala(sala) {
+  return {
+    codigo: sala.codigo,
+    juego: sala.juego,
+    fase: sala.fase,
+    anfitrionId: sala.anfitrionId,
+    capacidad: REGLAS.JUGADORES_POR_SALA,
+    asientosLibres: REGLAS.JUGADORES_POR_SALA - sala.jugadores.size,
+    numeroRonda: sala.numero_ronda,
+    // Límite del turno (DOC-02): la interfaz puede pintar la cuenta regresiva
+    // aunque todavía no haya nadie en turno.
+    limiteTurnoMs: limiteDeTurno(sala.juego),
+    turno: sala.turnos ? sala.turnos.vistaPublica() : null,
+    // Resultado autoritativo de la ronda: null hasta que el servidor lanza. Quien
+    // entra con la ronda ya en `resultados` lo recibe aquí. La semilla nunca se difunde.
+    resultado: sala.resultado || null,
+    ...(sala.juego === 'blackjack' && {
+      casa: sala.blackjack ? vistaDeCasa(sala.blackjack.casa, sala.fase === FASES.RESULTADOS) : null
+    }),
+    // Tras liquidar, cada apuesta trae además multiplicador, pago, neto y resultado.
+    apuestas: sala.apuestas.map(vistaDeApuesta),
+    acciones: sala.acciones.map(({ jugadorId, accion, automatica, motivo, mensaje }) => ({
+      jugadorId,
+      accion,
+      automatica,
+      motivo,
+      mensaje
+    })),
+    jugadores: jugadoresDeSala(sala).map((jugador) => ({
+      id: jugador.id,
+      nombre: jugador.nombre,
+      avatar: jugador.avatar,
+      fichas: jugador.fichas,
+      esAnfitrion: jugador.id === sala.anfitrionId
+    }))
+  };
 }
 
 function difundirEstado(sala) {
@@ -303,6 +365,15 @@ app.get('/health', (req, res) => {
   res.json({ ok: true });
 });
 
+app.get('/sala/:codigo', (req, res) => {
+  const codigo = normalizarCodigoSala(req.params.codigo);
+  if (!codigo) {
+    res.status(400).send('El código de sala debe tener cinco letras o números.');
+    return;
+  }
+  res.redirect(`/perfil.html?accion=entrar&codigo=${codigo}`);
+});
+
 app.get('/api/salas', (req, res) => {
   res.json({ ok: true, salas: salas.listar().map(resumenDeSala) });
 });
@@ -376,8 +447,16 @@ io.on('connection', (socket) => {
         if (salaPrevia.estado === ESTADOS_SALA.ABIERTA) difundirEstado(salaPrevia);
       }
 
-      socket.data.codigoSala = sala.codigo;
-      socket.join(sala.codigo);
+      const juego = validarJuego(datos && datos.juego);
+      const jugador = crearJugador(socket.id, datos || {});
+      const codigo = generarCodigoSala(salas);
+      const sala = crearSala(codigo, juego, socket.id, jugador);
+
+      // Se registra en el mismo paso síncrono para que otra creación no tome el mismo código.
+      salas.set(codigo, sala);
+      abandonarSala(socket);
+      socket.data.codigoSala = codigo;
+      socket.join(codigo);
 
       socket.emit('estado_sala', estadoPublico(sala));
       if (typeof ack === 'function') ack({ ok: true, codigo: sala.codigo });
@@ -448,21 +527,24 @@ io.on('connection', (socket) => {
       }
 
       const monto = Number(datos && datos.monto);
-      const opcion = typeof (datos && datos.opcion) === 'string' ? datos.opcion.trim().toLowerCase() : '';
+      const opcionSolicitada = datos && datos.opcion;
       const yaAposto = sala.apuestas.some((apuesta) => apuesta.jugadorId === jugador.id);
       if (yaAposto) throw error('APUESTA_REPETIDA', 'Ya confirmaste tu apuesta en esta ronda.');
 
       const validacion = validarApuesta(jugador.fichas, monto, false);
       if (!validacion.ok) throw error('APUESTA_INVALIDA', validacion.error);
 
-      // DOC-02 §10.6: la opción tiene que existir en el juego (`cara` o `cruz` en
-      // Cara o Cruz). Los juegos que aún no tienen motor conservan la revisión mínima.
+      // DOC-02 §10.6: el motor valida y normaliza la opción antes de descontar fichas.
+      // Los juegos sin motor conservan la revisión mínima.
       const motor = MOTORES_RAPIDOS.get(sala.juego);
+      let opcion;
       if (motor) {
-        const revision = motor.validarOpcion(opcion);
+        const revision = motor.validarOpcion(opcionSolicitada);
         if (!revision.ok) throw error('OPCION_INVALIDA', revision.error);
-      } else if (!opcion) {
-        throw error('APUESTA_INVALIDA', 'Elige una opción para tu apuesta.');
+        opcion = revision.opcion;
+      } else {
+        opcion = typeof opcionSolicitada === 'string' ? opcionSolicitada.trim().toLowerCase() : '';
+        if (!opcion) throw error('APUESTA_INVALIDA', 'Elige una opción para tu apuesta.');
       }
 
       const ahora = Date.now();
@@ -520,6 +602,8 @@ io.on('connection', (socket) => {
         throw error('JUEGO_SIN_TURNOS', 'Este juego no se reparte ni se juega por turnos: el anfitrión lo inicia con «lanzar».');
       }
 
+      if (!esAnfitrion(sala, jugador.id)) throw error('SOLO_ANFITRION', 'Solo el anfitrión puede repartir.');
+
       const orden = sala.apuestas
         .map((apuesta) => apuesta.jugadorId)
         .filter((jugadorId) => sala.jugadores.has(jugadorId));
@@ -531,6 +615,13 @@ io.on('connection', (socket) => {
       sala.puestas = {};
 
       io.to(sala.codigo).emit('ronda_iniciada', { numeroRonda: sala.numero_ronda, juego: sala.juego, orden });
+      if (reparto) {
+        sala.blackjack = reparto;
+        sala.semillaRng = semilla;
+        for (const [jugadorId, cartas] of reparto.manos) {
+          io.to(jugadorId).emit('cartas', { numeroRonda: sala.numero_ronda, cartas, puntos: contarPuntos(cartas) });
+        }
+      }
       iniciarTurnos(sala, orden); // emite `turno` con su deadline y el estado nuevo
       return { numeroRonda: sala.numero_ronda, orden, limiteTurnoMs: limiteDeTurno(sala.juego) };
     });

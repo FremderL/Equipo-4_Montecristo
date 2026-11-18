@@ -114,15 +114,21 @@
         </aside>
       </section>
 
-      <section class="aviso aviso--exito sala-lista" id="sala-lista" aria-live="polite" tabindex="-1" hidden>
+      <section class="aviso aviso--exito sala-lista" id="sala-lista" aria-labelledby="titulo-sala-lista" tabindex="-1" hidden>
         <div class="sala-lista__interior">
           <div class="sala-lista__texto">
-            <strong>Sala lista</strong>
-            <p id="texto-sala-lista">El servidor confirmó la sala. Comparte este código con tus amigos:</p>
+            <strong id="titulo-sala-lista">Sala lista</strong>
+            <p>Tus amigos pueden entrar con este código desde el inicio:</p>
             <span class="sala-lista__codigo" id="codigo-creado"></span>
           </div>
-          <a class="btn btn--dorado" id="enlace-sala" href="index.html">Abrir sala</a>
+          <div class="perfil-card__acciones">
+            <button class="btn btn--dorado" id="copiar-codigo" type="button">Copiar código</button>
+            <a class="btn btn--fantasma" id="enlace-sala" target="_blank" rel="noopener">Enlace de invitación</a>
+          </div>
         </div>
+        <p class="sala-lista__estado-copia" id="estado-copia" role="status"></p>
+        <p class="sala-lista__ocupacion" id="ocupacion-sala" role="status"></p>
+        <ul class="sala-lista__jugadores" id="jugadores-sala" role="list" aria-label="Jugadores en la sala"></ul>
       </section>
     </main>
 

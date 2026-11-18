@@ -55,7 +55,7 @@ en tiempo real. Una persona crea una sala, comparte un enlace o un código de 5 
 | --- | --- | ---: | --- |
 | **Cara o Cruz** | 5–10 s | 1 | Acierto ×2 |
 | **Dados** | 5–10 s | 1 | Bajo/alto ×2 · número exacto ×6 |
-| **Ruleta** (europea 0–36) | 15–30 s | 1 | Pleno ×36 · docena/columna ×3 · color/paridad/rango ×2 |
+| **Ruleta** (europea 0–36) | 15–30 s | 1 | Pleno ×36 · color/paridad ×2 |
 | **Blackjack / 21** | 1–3 min | 1 | Victoria ×2 · natural ×2,5 · empate ×1 · seguro ×3 |
 | **Texas Hold'em** | 2–5 min | 2 | Sin multiplicador: el ganador se lleva el bote (ciegas 10/20) |
 
@@ -134,10 +134,14 @@ Entra a **http://localhost:3000** en tu navegador.
 
 ### 5. Crea tu primera sala
 
-1. Escribe tu nombre y elige un avatar.
-2. Pulsa **Crear sala** y elige el juego.
-3. Copia el enlace o el código de 5 caracteres y compártelo.
-4. Pulsa **Lanzar** (o **Repartir**) cuando todas las apuestas estén listas.
+1. Pulsa **Crear sala**, escribe tu nombre, elige tu avatar y selecciona un juego.
+2. En **Sala lista**, pulsa **Copiar código** y compártelo con tus amigos. El servidor genera un
+   código de 5 letras o números y comprueba que no se repita entre salas activas.
+3. Tus amigos pueden escribirlo en **Entrar con código** desde el inicio o abrir el **Enlace de
+   invitación**. Tras completar su perfil, aparecerán en la lista de la misma sala.
+
+Mantén abierta la pestaña de la sala para conservar tu asiento. El código deja de funcionar cuando
+la sala queda vacía. Por ahora, las rondas de Cara o Cruz se pueden probar desde la consola (paso 7).
 
 ### 6. Comprueba el reloj de turno
 
@@ -175,6 +179,50 @@ y `estado_sala` en fase `resultados`. Con 100 fichas a `cara` el saldo queda en 
 cara y en **900** si sale cruz. Un segundo `lanzar` se rechaza con `RONDA_LIQUIDADA` (la ronda se
 paga una sola vez) y solo el anfitrión puede lanzar. Para probar con más gente, abre otra pestaña
 y entra con `mesa.emit('entrar_sala', { codigo: 'K7Q2M', nombre: 'Bruno', avatar: '🐼' }, console.log)`.
+Sustituye `K7Q2M` por el código que devolvió `crear_sala`.
+
+### 8. Juega una ronda de Ruleta
+
+La ruleta ya se puede jugar por Socket.IO. Apuesta a `rojo`, `negro`, `par` o `impar` (×2),
+o a un número exacto de `n:0` a `n:36` (×36). Si sale **0**, pierden las apuestas de color y
+paridad: solo cobra quien eligió `n:0`. Los pagos incluyen lo apostado. Las apuestas de rango,
+docena y columna quedan fuera de esta implementación.
+
+Mientras llega la pantalla de la mesa, abre la consola del navegador en la página de inicio
+con el servidor encendido y ejecuta estas líneas:
+
+```js
+const ruleta = io();
+ruleta.on('resultado', console.log);
+await ruleta.emitWithAck('crear_sala', { nombre: 'Ana', avatar: '🦊', juego: 'roulette' });
+await ruleta.emitWithAck('comenzar');
+await ruleta.emitWithAck('apostar', { monto: 100, opcion: 'n:0' });
+await ruleta.emitWithAck('lanzar');
+await ruleta.emitWithAck('nueva_ronda');
+```
+
+El anfitrión lanza un solo giro para toda la sala. Si sale cero, el resultado del giro es
+`{ numero: 0, color: 'verde' }` y la apuesta del ejemplo cobra **3.600** fichas
+(**+3.500** netas). Si sale otro número, la apuesta cobra 0.
+
+### 8. Probar el reparto inicial de blackjack
+
+Desde la consola del navegador en la página de MonteCristo, con el servidor encendido:
+
+```js
+const mesa21 = io();
+mesa21.on('cartas', ({ cartas, puntos }) => console.log('Tu mano:', cartas, puntos));
+mesa21.on('estado_sala', ({ casa }) => { if (casa) console.log('Casa:', casa.cartas, casa.puntos); });
+await mesa21.emitWithAck('crear_sala', { nombre: 'Ana', avatar: '🦊', juego: 'blackjack' });
+await mesa21.emitWithAck('comenzar');
+await mesa21.emitWithAck('apostar', { monto: 10, opcion: 'mano' });
+await mesa21.emitWithAck('repartir');
+```
+
+Cada jugador con apuesta recibe dos cartas en privado. En la mano pública de la casa, `null`
+representa la carta tapada: durante los turnos solo se cuentan los puntos visibles. Cuando todos
+se plantan (o vence su reloj), la casa muestra su segunda carta y su total. Este reparto no
+implementa las jugadas adicionales ni la liquidación de blackjack.
 
 ### Modo desarrollo
 
@@ -249,7 +297,7 @@ Render asigna `PORT` automáticamente. El blueprint define `NODE_ENV=production`
 | --- | --- |
 | `npm start` | Inicia el servidor en el puerto 3000 (o el de `PORT`) |
 | `npm run dev` | Igual que `npm start`, pensado para desarrollo |
-| `npm test` | Ejecuta las pruebas de reglas, pagos y validaciones |
+| `npm test` | Ejecuta las pruebas de reglas, pagos, validaciones e ingreso a salas |
 | `npm run db:migrar` | Aplica `db/schema.sql` sobre SQLite (idempotente; lo usa Render al arrancar) |
 | `npm run lint` | Revisa el estilo del código con ESLint |
 
@@ -301,12 +349,13 @@ montecristo/
 │  └─ app.js
 ├─ lib/
 │  ├─ reglas.js           # constantes y tabla de pagos (DOC-02)
+│  ├─ codigo-sala.js      # generación y validación de códigos de sala
 │  ├─ rng.js              # generador aleatorio con semilla
 │  ├─ turno.js            # reloj de turno: decide por quien no responde
 │  ├─ lanzamiento.js      # juegos rápidos: lanzar, liquidar y pasar a resultados
 │  ├─ salas.js            # estado en memoria (DOC-03)
 │  ├─ snapshot.js         # data/estado.json
-│  └─ juegos/             # coinflip (listo) · dice · roulette · blackjack · poker
+│  └─ juegos/             # motores implementados: coinflip y roulette
 ├─ data/                  # snapshot JSON (opcional)
 ├─ docs/                  # documentación del proyecto (01–05)
 └─ tests/                 # pruebas con los casos de DOC-02

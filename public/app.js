@@ -12,6 +12,7 @@ const ETIQUETAS_AVATAR = {
 };
 
 const CLAVE_PERFIL = 'montecristo.perfil';
+const FORMATO_CODIGO_SALA = /^[A-Z0-9]{5}$/;
 
 let socket = null;
 let accionPerfil = 'crear';
@@ -61,6 +62,12 @@ function cargarSocketIO() {
         actualizarEstadoConexion('conectado', 'Conectado al servidor');
       });
       socket.on('disconnect', () => {
+        const salaLista = buscarPorId('sala-lista');
+        if (salaLista && !salaLista.hidden) {
+          salaLista.hidden = true;
+          mostrarAviso(buscarPorId('error-perfil'), 'Se perdió la conexión con la sala. Cuando se restablezca, vuelve a intentarlo.');
+        }
+
         if (socket && socket.active) {
           actualizarEstadoConexion('conectando', 'Conectando…');
         } else {
@@ -70,6 +77,7 @@ function cargarSocketIO() {
       socket.on('connect_error', () => {
         actualizarEstadoConexion('no-disponible', 'Servidor no disponible');
       });
+      socket.on('estado_sala', mostrarJugadoresDeSala);
       socket.on('error', manejarErrorServidor);
     } catch (error) {
       actualizarEstadoConexion('no-disponible', 'Servidor no disponible');
@@ -128,7 +136,7 @@ function iniciarInicio() {
     evento.preventDefault();
     const codigo = campoCodigo.value.toUpperCase();
 
-    if (!/^[A-Z0-9]{5}$/.test(codigo)) {
+    if (!FORMATO_CODIGO_SALA.test(codigo)) {
       campoCodigo.setAttribute('aria-invalid', 'true');
       mostrarAviso(regionError, 'Escribe un código de sala de exactamente cinco letras o números. No se permiten espacios ni símbolos.');
       campoCodigo.focus();
@@ -153,7 +161,7 @@ function iniciarPerfil() {
 
   const parametros = new URLSearchParams(window.location.search);
   accionPerfil = parametros.get('accion') === 'entrar' ? 'entrar' : 'crear';
-  codigoDestino = (parametros.get('codigo') || '').toUpperCase();
+  codigoDestino = (parametros.get('codigo') || '').trim().toUpperCase();
   perfilGuardado = leerPerfilGuardado();
 
   if (perfilGuardado && typeof perfilGuardado.nombre === 'string') {
@@ -184,6 +192,8 @@ function iniciarPerfil() {
     evento.preventDefault();
     enviarSolicitudPerfil(campoNombre, campoJuego);
   });
+
+  buscarPorId('copiar-codigo')?.addEventListener('click', copiarCodigoSala);
 }
 
 function configurarIntencion(campoJuego) {
@@ -212,7 +222,7 @@ function configurarIntencion(campoJuego) {
     if (resumenCodigo) {
       resumenCodigo.hidden = false;
 
-      if (/^[A-Z0-9]{5}$/.test(codigoDestino)) {
+      if (FORMATO_CODIGO_SALA.test(codigoDestino)) {
         resumenCodigo.textContent = `Vas a entrar a la sala ${codigoDestino}.`;
         resumenCodigo.classList.remove('aviso--peligro');
       } else {
@@ -395,7 +405,7 @@ function enviarSolicitudPerfil(campoNombre, campoJuego) {
     return;
   }
 
-  if (accionPerfil === 'entrar' && !/^[A-Z0-9]{5}$/.test(codigoDestino)) {
+  if (accionPerfil === 'entrar' && !FORMATO_CODIGO_SALA.test(codigoDestino)) {
     mostrarAviso(regionError, 'El código de sala no es válido. Vuelve al inicio y escribe exactamente cinco letras o números.');
     return;
   }
@@ -472,17 +482,14 @@ function enviarSolicitudPerfil(campoNombre, campoJuego) {
       return;
     }
 
-    const codigo = accionPerfil === 'entrar'
-      ? codigoDestino
-      : String(respuesta.codigo || '').toUpperCase();
-
-    if (!/^[A-Z0-9]{5}$/.test(codigo)) {
+    const codigo = respuesta.codigo;
+    if (typeof codigo !== 'string' || !FORMATO_CODIGO_SALA.test(codigo)) {
       finalizarEnvio();
       mostrarAviso(regionError, 'El servidor confirmó la solicitud, pero no devolvió un código de sala válido.');
       return;
     }
 
-    abrirSalaOCrearAviso(codigo);
+    mostrarSala(codigo);
   });
 }
 
@@ -492,11 +499,16 @@ function guardarPerfil(nombre) {
     : '';
 
   if (!deviceId) {
-    if (!window.crypto || typeof window.crypto.randomUUID !== 'function') {
+    const { crypto } = window;
+    if (typeof crypto?.randomUUID === 'function') {
+      deviceId = crypto.randomUUID();
+    } else if (typeof crypto?.getRandomValues === 'function') {
+      // Compartir la sala por HTTP en una red local no habilita randomUUID.
+      const bytes = crypto.getRandomValues(new Uint8Array(16));
+      deviceId = `d_${Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('')}`;
+    } else {
       throw new Error('Este navegador no permite generar un identificador seguro. Actualiza el navegador para continuar.');
     }
-
-    deviceId = window.crypto.randomUUID();
   }
 
   const datos = {
@@ -575,50 +587,41 @@ function limpiarTemporizadorSolicitud() {
   }
 }
 
-async function abrirSalaOCrearAviso(codigo) {
-  const ruta = `/sala/${encodeURIComponent(codigo)}`;
+function mostrarSala(codigo) {
+  // Mantén la página y su socket abiertos: navegar cerraría el asiento del jugador.
+  const regionLista = buscarPorId('sala-lista');
+  finalizarEnvio();
+  mostrarAviso(buscarPorId('error-perfil'), '');
+
+  buscarPorId('codigo-creado').textContent = codigo;
+  buscarPorId('enlace-sala').href = `/sala/${codigo}`;
+  buscarPorId('estado-copia').textContent = '';
+  regionLista.hidden = false;
+  regionLista.focus();
+}
+
+function mostrarJugadoresDeSala({ jugadores, capacidad }) {
+  const lista = buscarPorId('jugadores-sala');
+  if (!lista) return;
+
+  buscarPorId('ocupacion-sala').textContent = `${jugadores.length} de ${capacidad} jugadores`;
+  lista.replaceChildren(...jugadores.map(({ nombre, avatar, esAnfitrion }) => {
+    const item = document.createElement('li');
+    item.className = 'badge';
+    item.textContent = `${avatar} ${nombre}${esAnfitrion ? ' (anfitrión)' : ''}`;
+    return item;
+  }));
+}
+
+async function copiarCodigoSala() {
+  const codigo = buscarPorId('codigo-creado').textContent;
+  const estado = buscarPorId('estado-copia');
 
   try {
-    const respuesta = await window.fetch(ruta, {
-      method: 'GET',
-      cache: 'no-store',
-      headers: { 'Accept': 'text/html' }
-    });
-
-    if (respuesta.ok) {
-      window.location.assign(ruta);
-      return;
-    }
-  } catch (error) {
-    // Si la pantalla de sala todavía no está disponible, se muestra el código aquí.
-  }
-
-  const regionLista = buscarPorId('sala-lista');
-  const codigoCreado = buscarPorId('codigo-creado');
-  const enlaceSala = buscarPorId('enlace-sala');
-  const textoLista = buscarPorId('texto-sala-lista');
-  const regionError = buscarPorId('error-perfil');
-
-  finalizarEnvio();
-  mostrarAviso(regionError, '');
-
-  if (codigoCreado) {
-    codigoCreado.textContent = codigo;
-  }
-
-  if (enlaceSala) {
-    enlaceSala.href = ruta;
-  }
-
-  if (textoLista) {
-    textoLista.textContent = accionPerfil === 'crear'
-      ? 'La sala está creada. La pantalla de juego todavía no está disponible; comparte este código para probar el flujo:'
-      : 'La entrada a la sala está confirmada. La pantalla de juego todavía no está disponible; este es el código de la sala:';
-  }
-
-  if (regionLista) {
-    regionLista.hidden = false;
-    regionLista.focus();
+    await navigator.clipboard.writeText(codigo);
+    estado.textContent = 'Código copiado.';
+  } catch {
+    estado.textContent = 'No se pudo copiar automáticamente. Selecciona y copia el código mostrado.';
   }
 }
 

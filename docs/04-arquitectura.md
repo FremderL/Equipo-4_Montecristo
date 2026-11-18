@@ -44,7 +44,7 @@ el resultado de una ronda se genera una sola vez, en el servidor, y todos los cl
 | Método | Ruta | Respuesta |
 | --- | --- | --- |
 | `GET` | `/` | Página principal (`index.html`) |
-| `GET` | `/sala/:codigo` | Misma página, abre la sala indicada |
+| `GET` | `/sala/:codigo` | Enlace de invitación: abre el perfil con el código listo para entrar |
 | `GET` | `/api/salas` | Lista de salas activas con juego, fase y ocupación |
 | `GET` | `/api/salas/:codigo` | Existe o no la sala y cuántos asientos libres tiene |
 | `GET` | `/health` | `{ "ok": true }` para verificar que el servidor vive |
@@ -57,7 +57,7 @@ el resultado de una ronda se genera una sola vez, en el servidor, y todos los cl
 | `entrar_sala` | Cualquiera | `{ codigo, nombre, avatar }` |
 | `salir_sala` | Jugador | — |
 | `comenzar` | **Anfitrión** | — (abre la fase `apuestas`) |
-| `apostar` | Jugador | `{ monto, opcion }` (Cara o Cruz: `opcion` es `'cara'` o `'cruz'`) |
+| `apostar` | Jugador | `{ monto, opcion }` (las opciones dependen del juego, ver abajo) |
 | `lanzar` | **Anfitrión** | — (juegos rápidos: el servidor lanza y liquida; lo que mande el cliente se ignora) |
 | `repartir` | **Anfitrión** | — (blackjack y póker: arranca el reloj de turno) |
 | `accion_blackjack` | Jugador en turno | `{ accion: 'hit' \| 'stand' \| 'double' \| 'split' }` |
@@ -72,7 +72,7 @@ el resultado de una ronda se genera una sola vez, en el servidor, y todos los cl
 | --- | --- | --- |
 | `estado_sala` | Al entrar y después de **cada** cambio | Sala completa (`lib/salas.js`): `id`, `codigo`, `juego`, `estado`, `fase`, `anfitrionId`, `capacidad`, `asientosLibres`, `apuestaMinima`, `numeroRonda`, `jugadores` (en orden de `asiento` 1–6, con `fichas`, `esAnfitrion` y `conectado`), `apuestas`, `bote`, `turno` y `resultado` (`null` hasta que se lanza) |
 | `ronda_iniciada` | Al lanzar o repartir | `{ numeroRonda, juego }` |
-| `cartas` | Solo al dueño de esas cartas | `{ cartas: [...] }` (nunca las ajenas) |
+| `cartas` | Solo al dueño de esas cartas | `{ cartas: [...] }`; en blackjack incluye también `numeroRonda` y `puntos` |
 | `turno` | En blackjack y póker, al empezar cada turno y al cerrar la vuelta | `{ jugadorId, deadline, tiempoMs, segundosRestantes, posicion, total, activo }`; `jugadorId: null` cuando ya no hay turno |
 | `turno_automatico` | Cuando el reloj vence o el jugador se va en su turno | `{ jugadorId, nombre, accion, motivo, mensaje, numeroRonda }` |
 | `apuesta_confirmada` | Al confirmar una apuesta | `{ jugadorId, nombre, monto, opcion }` |
@@ -85,6 +85,12 @@ Cada evento del cliente se responde con un **acknowledgement**: `{ ok: true }` o
 `{ ok: false, error }`. Si llega `ok: false`, la interfaz muestra el mensaje y no cambia nada.
 Los eventos sin datos se pueden mandar solo con su ack: `socket.emit('lanzar', ack)`.
 
+**Reparto de blackjack.** Solo reciben `cartas` quienes confirmaron una apuesta. Todos ven
+`estado_sala.casa`: antes del reparto es `null`; durante el juego, por ejemplo,
+`{ cartas: ['A♥', null], puntos: 11 }`. El `null` representa la carta tapada y el puntaje se
+calcula solo con la visible. En `resultados` se muestran las dos cartas de la casa y su total.
+El mazo, la semilla y las manos de los demás jugadores no viajan en el estado público.
+
 **Resultado de un juego rápido.** En Cara o Cruz `resultado` es `{ lado: 'cara' }` o
 `{ lado: 'cruz' }`. Cada apuesta liquidada trae su `multiplicador`, el `pago` total (incluye lo
 apostado), el `neto` (lo que ganó o perdió) y `resultado: 'gana' | 'pierde' | 'empate'`. Las mismas
@@ -92,12 +98,12 @@ apuestas, ya liquidadas, van en `estado_sala`; antes de lanzar esos cuatro campo
 
 | Rechazo de `apostar` / `lanzar` | `error.codigo` |
 | --- | --- |
-| La opción no existe en el juego (algo distinto de `cara` o `cruz`) | `OPCION_INVALIDA` |
+| La opción no existe en el juego (p. ej. `n:37` en Ruleta) | `OPCION_INVALIDA` |
 | Se lanza fuera de la fase `apuestas` | `FASE_INVALIDA` |
 | Lanza alguien que no es el anfitrión | `SOLO_ANFITRION` |
 | Nadie confirmó una apuesta | `SIN_APOSTADORES` |
 | La ronda ya se lanzó (segundo `lanzar`) | `RONDA_LIQUIDADA` |
-| El juego de la sala no se lanza (blackjack, póker) o su motor aún no existe (dados, ruleta) | `JUEGO_SIN_LANZAMIENTO` · `JUEGO_NO_DISPONIBLE` |
+| El juego de la sala no se lanza (blackjack, póker) o su motor aún no existe (dados) | `JUEGO_SIN_LANZAMIENTO` · `JUEGO_NO_DISPONIBLE` |
 
 ---
 
@@ -120,11 +126,11 @@ Jugador A                Servidor                       Jugador B
    │◀──── estado_sala ───────│─────── estado_sala ──────────▶
 ```
 
-Así corre ya **Cara o Cruz**: al recibir `lanzar`, `lib/lanzamiento.js` recorre el motor de fases
-(`apuestas → jugando → resultados`) en un solo paso y `lib/juegos/coinflip.js` pone la moneda y el
-pago ×2; antes de `resultado` se emite `ronda_iniciada`. La ronda es todo o nada: si algo falla
-antes de pagar, la sala sigue intacta en `apuestas`. Dados y ruleta usarán el mismo camino cuando
-registren su motor en `server.js`.
+Así corren **Cara o Cruz** y **Ruleta**: al recibir `lanzar`, `lib/lanzamiento.js` recorre el
+motor de fases (`apuestas → jugando → resultados`) en un solo paso y delega el lanzamiento y
+los multiplicadores a `lib/juegos/coinflip.js` o `lib/juegos/roulette.js`. Antes de `resultado`
+se emite `ronda_iniciada`. La ronda es todo o nada: si algo falla antes de pagar, la sala sigue
+intacta en `apuestas`. Dados usará el mismo camino cuando se registre su motor en `server.js`.
 
 En **blackjack** y **póker** el mismo esquema se repite por turno: el servidor manda `turno`,
 espera la acción (o vence el reloj), aplica la jugada y vuelve a difundir `estado_sala`.
