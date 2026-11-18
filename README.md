@@ -55,7 +55,7 @@ en tiempo real. Una persona crea una sala, comparte un enlace o un código de 5 
 | --- | --- | ---: | --- |
 | **Cara o Cruz** | 5–10 s | 1 | Acierto ×2 |
 | **Dados** | 5–10 s | 1 | Bajo/alto ×2 · número exacto ×6 |
-| **Ruleta** (europea 0–36) | 15–30 s | 1 | Pleno ×36 · docena/columna ×3 · color/paridad/rango ×2 |
+| **Ruleta** (europea 0–36) | 15–30 s | 1 | Pleno ×36 · color/paridad ×2 |
 | **Blackjack / 21** | 1–3 min | 1 | Victoria ×2 · natural ×2,5 · empate ×1 · seguro ×3 |
 | **Texas Hold'em** | 2–5 min | 2 | Sin multiplicador: el ganador se lleva el bote (ciegas 10/20) |
 
@@ -180,6 +180,30 @@ cara y en **900** si sale cruz. Un segundo `lanzar` se rechaza con `RONDA_LIQUID
 paga una sola vez) y solo el anfitrión puede lanzar. Para probar con más gente, abre otra pestaña
 y entra con `mesa.emit('entrar_sala', { codigo: 'K7Q2M', nombre: 'Bruno', avatar: '🐼' }, console.log)`.
 Sustituye `K7Q2M` por el código que devolvió `crear_sala`.
+
+### 8. Juega una ronda de Ruleta
+
+La ruleta ya se puede jugar por Socket.IO. Apuesta a `rojo`, `negro`, `par` o `impar` (×2),
+o a un número exacto de `n:0` a `n:36` (×36). Si sale **0**, pierden las apuestas de color y
+paridad: solo cobra quien eligió `n:0`. Los pagos incluyen lo apostado. Las apuestas de rango,
+docena y columna quedan fuera de esta implementación.
+
+Mientras llega la pantalla de la mesa, abre la consola del navegador en la página de inicio
+con el servidor encendido y ejecuta estas líneas:
+
+```js
+const ruleta = io();
+ruleta.on('resultado', console.log);
+await ruleta.emitWithAck('crear_sala', { nombre: 'Ana', avatar: '🦊', juego: 'roulette' });
+await ruleta.emitWithAck('comenzar');
+await ruleta.emitWithAck('apostar', { monto: 100, opcion: 'n:0' });
+await ruleta.emitWithAck('lanzar');
+await ruleta.emitWithAck('nueva_ronda');
+```
+
+El anfitrión lanza un solo giro para toda la sala. Si sale cero, el resultado del giro es
+`{ numero: 0, color: 'verde' }` y la apuesta del ejemplo cobra **3.600** fichas
+(**+3.500** netas). Si sale otro número, la apuesta cobra 0.
 
 ### Modo desarrollo
 
@@ -312,7 +336,7 @@ montecristo/
 │  ├─ lanzamiento.js      # juegos rápidos: lanzar, liquidar y pasar a resultados
 │  ├─ salas.js            # estado en memoria (DOC-03)
 │  ├─ snapshot.js         # data/estado.json
-│  └─ juegos/             # coinflip (listo) · dice · roulette · blackjack · poker
+│  └─ juegos/             # motores implementados: coinflip y roulette
 ├─ data/                  # snapshot JSON (opcional)
 ├─ docs/                  # documentación del proyecto (01–05)
 └─ tests/                 # pruebas con los casos de DOC-02
