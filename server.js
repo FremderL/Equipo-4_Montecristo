@@ -20,6 +20,8 @@ const { REGLAS } = require('./lib/reglas.js');
 const { generarCodigoSala, normalizarCodigoSala } = require('./lib/codigo-sala.js');
 const { FASES, cambiarFase, abrirNuevaRonda, fasePermiteAccion, cancelarTemporizadores, esAnfitrion } = require('./lib/ronda.js');
 const { validarApuesta } = require('./lib/fichas.js');
+// Ticket 2: crear, buscar y actualizar jugadores pasa SIEMPRE por estas funciones.
+const jugadores = require('./lib/jugadores.js');
 const { crearRelojDeTurnos, tiempoDeTurno } = require('./lib/turno.js');
 const { lanzarRonda, vistaDeApuesta, nuevaSemilla } = require('./lib/lanzamiento.js');
 const { crearRng } = require('./lib/rng.js');
@@ -75,19 +77,20 @@ function error(codigo, mensaje) {
 }
 
 function validarNombre(nombre) {
-  if (typeof nombre !== 'string') throw error('NOMBRE_INVALIDO', 'Escribe tu nombre para continuar.');
-
-  const limpio = nombre.trim();
-  if (limpio.length === 0) throw error('NOMBRE_INVALIDO', 'Escribe tu nombre para continuar.');
-  if (limpio.length > 24) throw error('NOMBRE_INVALIDO', 'El nombre puede tener como máximo 24 caracteres.');
-  return limpio;
+  // La regla vive en lib/jugadores.js; aquí solo se le pone el código de error del socket.
+  try {
+    return jugadores.validarNombre(nombre);
+  } catch (fallo) {
+    throw error(fallo.codigo || 'NOMBRE_INVALIDO', fallo.message);
+  }
 }
 
 function validarAvatar(avatar) {
-  if (typeof avatar !== 'string' || avatar.trim().length === 0) {
-    throw error('AVATAR_INVALIDO', 'Selecciona un avatar antes de continuar.');
+  try {
+    return jugadores.validarAvatar(avatar);
+  } catch (fallo) {
+    throw error(fallo.codigo || 'AVATAR_INVALIDO', fallo.message);
   }
-  return avatar.trim().slice(0, 8);
 }
 
 function validarJuego(juego) {
@@ -173,12 +176,27 @@ function crearSala(codigo, juego, anfitrionId, jugador) {
   };
 }
 
-function crearJugador(socketId, { nombre, avatar }) {
+/**
+ * Jugador de una sala (DOC-04 §4). El registro persistente se crea, se busca
+ * por id y se actualiza con lib/jugadores.js: aquí no hay SQL suelto.
+ */
+function crearJugador(socketId, datos = {}) {
+  const nombre = validarNombre(datos && datos.nombre);
+  const avatar = validarAvatar(datos && datos.avatar);
+
+  let registrado = jugadores.buscarJugadorPorId(socketId);
+  if (!registrado) {
+    registrado = jugadores.crearJugador({ id: socketId, nombre, avatar });
+  } else if (registrado.nombre !== nombre || registrado.avatar !== avatar) {
+    // Volver a entrar con otro nombre o avatar actualiza el perfil guardado.
+    registrado = jugadores.actualizarJugador(socketId, { nombre, avatar });
+  }
+
   return {
-    id: socketId,
-    nombre: validarNombre(nombre),
-    avatar: validarAvatar(avatar),
-    fichas: REGLAS.SALDO_INICIAL,
+    id: registrado.id,
+    nombre: registrado.nombre,
+    avatar: registrado.avatar,
+    fichas: registrado.saldo,
     conectado: true
   };
 }

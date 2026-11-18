@@ -3,7 +3,15 @@
 const { before, after, test } = require('node:test');
 const assert = require('node:assert/strict');
 const { once } = require('node:events');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 const { io: clienteIo } = require('socket.io-client');
+
+// Base de datos de pruebas en un archivo aparte: no toca data/casino.db.
+const archivoDb = path.join(os.tmpdir(), `montecristo-salas-${process.pid}.db`);
+process.env.DB_FILE = archivoDb;
+
 const { servidor, io } = require('../server.js');
 const { REGLAS } = require('../lib/reglas.js');
 
@@ -19,6 +27,9 @@ before(async () => {
 
 after(async () => {
   await io.close();
+  for (const sufijo of ['', '-wal', '-shm']) {
+    fs.rmSync(archivoDb + sufijo, { force: true });
+  }
 });
 
 async function conectar(t) {
