@@ -154,24 +154,44 @@ Reglas que el diagrama no dibuja pero el código debe cumplir:
 
 ## 4. Implementación en memoria (v1)
 
-```js
-// Estructuras del servidor (Map = tabla)
-const salas     = new Map(); // id  -> sala
-const jugadores = new Map(); // id  -> jugador
-const partidas  = new Map(); // id  -> partida   (se poda a las últimas 20 por sala)
-const apuestas  = new Map(); // id  -> apuesta
+Implementada en `lib/salas.js` y usada por `server.js` (`crearSala`, `sentarJugador`,
+`retirarJugador`, `transferirAnfitrion`, `actualizarFaseSala`, `estadoDeSala` y
+`crearAlmacenSalas`).
 
-// Una sala en memoria se ve así:
+```js
+// Almacén autoritativo del servidor (lib/salas.js)
+const salas = crearAlmacenSalas({ maxSalas: 50 }); // codigo -> sala activa
+
+// Una sala en memoria (crearSala) guarda juego, jugadores sentados, anfitrión y fase:
 {
   id: 's_K7Q2M',
   codigo: 'K7Q2M',
-  juego: 'roulette',
-  anfitrionId: 'p_7f3a91',
+  juego: 'roulette',           // inmutable tras crear la sala
   capacidad: 6,
-  fase: 'apuestas',
   apuestaMinima: 10,
-  jugadores: ['p_7f3a91', 'p_2b8c04'], // hasta 6 ids, en orden de asiento
-  rondaActual: 'r_0042',
+  estado: 'abierta',           // 'abierta' | 'cerrada'
+  fase: 'apuestas',            // 'espera' -> 'apuestas' -> 'jugando' -> 'resultados'
+  numero_ronda: 1,
+  anfitrionId: 'p_7f3a91',     // siempre un jugador sentado (null al cerrarse)
+  jugadores: Map {             // hasta 6 jugadores con asiento único (1..6)
+    'p_7f3a91' => {
+      id: 'p_7f3a91', nombre: 'Ana', avatar: '🦊', fichas: 1000,
+      salaId: 's_K7Q2M', asiento: 1, esAnfitrion: true, conectado: true,
+      creadoEn: 1760475000000, ultimaActividad: 1760476931000
+    }
+  },
+  apuestas: [],
+  apuestasConfirmadas: 0,
+  manos: [],
+  resultado: null,
+  semillaRng: null,
+  acciones: [],
+  apuestaActual: 0,
+  puestas: {},
+  bote: 0,
+  turnos: null,
+  temporizadores: Set {},
+  tareasPendientes: [],
   creadaEn: 1760475000000,
   actualizadaEn: 1760476931000
 }
