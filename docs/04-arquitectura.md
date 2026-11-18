@@ -72,7 +72,7 @@ el resultado de una ronda se genera una sola vez, en el servidor, y todos los cl
 | --- | --- | --- |
 | `estado_sala` | Al entrar y después de **cada** cambio | Sala completa: jugadores, fichas, apuestas, fase, turno y `resultado` de la ronda (`null` hasta que se lanza) |
 | `ronda_iniciada` | Al lanzar o repartir | `{ numeroRonda, juego }` |
-| `cartas` | Solo al dueño de esas cartas | `{ cartas: [...] }` (nunca las ajenas) |
+| `cartas` | Solo al dueño de esas cartas | `{ cartas: [...] }`; en blackjack incluye también `numeroRonda` y `puntos` |
 | `turno` | En blackjack y póker, al empezar cada turno y al cerrar la vuelta | `{ jugadorId, deadline, tiempoMs, segundosRestantes, posicion, total, activo }`; `jugadorId: null` cuando ya no hay turno |
 | `turno_automatico` | Cuando el reloj vence o el jugador se va en su turno | `{ jugadorId, nombre, accion, motivo, mensaje, numeroRonda }` |
 | `apuesta_confirmada` | Al confirmar una apuesta | `{ jugadorId, nombre, monto, opcion }` |
@@ -84,6 +84,12 @@ el resultado de una ronda se genera una sola vez, en el servidor, y todos los cl
 Cada evento del cliente se responde con un **acknowledgement**: `{ ok: true }` o
 `{ ok: false, error }`. Si llega `ok: false`, la interfaz muestra el mensaje y no cambia nada.
 Los eventos sin datos se pueden mandar solo con su ack: `socket.emit('lanzar', ack)`.
+
+**Reparto de blackjack.** Solo reciben `cartas` quienes confirmaron una apuesta. Todos ven
+`estado_sala.casa`: antes del reparto es `null`; durante el juego, por ejemplo,
+`{ cartas: ['A♥', null], puntos: 11 }`. El `null` representa la carta tapada y el puntaje se
+calcula solo con la visible. En `resultados` se muestran las dos cartas de la casa y su total.
+El mazo, la semilla y las manos de los demás jugadores no viajan en el estado público.
 
 **Resultado de un juego rápido.** En Cara o Cruz `resultado` es `{ lado: 'cara' }` o
 `{ lado: 'cruz' }`. Cada apuesta liquidada trae su `multiplicador`, el `pago` total (incluye lo

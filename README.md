@@ -176,6 +176,25 @@ cara y en **900** si sale cruz. Un segundo `lanzar` se rechaza con `RONDA_LIQUID
 paga una sola vez) y solo el anfitrión puede lanzar. Para probar con más gente, abre otra pestaña
 y entra con `mesa.emit('entrar_sala', { codigo: 'K7Q2M', nombre: 'Bruno', avatar: '🐼' }, console.log)`.
 
+### 8. Probar el reparto inicial de blackjack
+
+Desde la consola del navegador en la página de MonteCristo, con el servidor encendido:
+
+```js
+const mesa21 = io();
+mesa21.on('cartas', ({ cartas, puntos }) => console.log('Tu mano:', cartas, puntos));
+mesa21.on('estado_sala', ({ casa }) => { if (casa) console.log('Casa:', casa.cartas, casa.puntos); });
+await mesa21.emitWithAck('crear_sala', { nombre: 'Ana', avatar: '🦊', juego: 'blackjack' });
+await mesa21.emitWithAck('comenzar');
+await mesa21.emitWithAck('apostar', { monto: 10, opcion: 'mano' });
+await mesa21.emitWithAck('repartir');
+```
+
+Cada jugador con apuesta recibe dos cartas en privado. En la mano pública de la casa, `null`
+representa la carta tapada: durante los turnos solo se cuentan los puntos visibles. Cuando todos
+se plantan (o vence su reloj), la casa muestra su segunda carta y su total. Este reparto no
+implementa las jugadas adicionales ni la liquidación de blackjack.
+
 ### Modo desarrollo
 
 ```bash

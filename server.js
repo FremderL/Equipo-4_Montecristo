@@ -7,6 +7,7 @@
 //   - mantiene las salas en memoria y atiende crear_sala / entrar_sala / salir_sala / chat
 //   - lanza los juegos rápidos: el anfitrión manda `lanzar` y el servidor genera el
 //     resultado y paga a toda la sala (Cara o Cruz: ×2 a quien acierta)
+//   - reparte blackjack con un mazo por ronda; solo el dueño recibe su mano y sus puntos
 //   - corre el reloj de turno: si el jugador no responde, el servidor decide por él
 //     (blackjack: se planta · póker: pasa si puede, si no se retira) y la partida sigue
 // El servidor es autoritativo: el navegador solo envía intenciones.
@@ -17,11 +18,13 @@ const crypto = require('node:crypto');
 const express = require('express');
 const { Server } = require('socket.io');
 const { REGLAS } = require('./lib/reglas.js');
-const { FASES, cambiarFase, abrirNuevaRonda, fasePermiteAccion, cancelarTemporizadores } = require('./lib/ronda.js');
+const { FASES, cambiarFase, abrirNuevaRonda, fasePermiteAccion, cancelarTemporizadores, esAnfitrion } = require('./lib/ronda.js');
 const { validarApuesta } = require('./lib/fichas.js');
 const { crearRelojDeTurnos, tiempoDeTurno } = require('./lib/turno.js');
-const { lanzarRonda, vistaDeApuesta } = require('./lib/lanzamiento.js');
+const { lanzarRonda, vistaDeApuesta, nuevaSemilla } = require('./lib/lanzamiento.js');
+const { crearRng } = require('./lib/rng.js');
 const coinflip = require('./lib/juegos/coinflip.js');
+const { contarPuntos, repartirInicial, vistaDeCasa } = require('./lib/juegos/blackjack.js');
 
 const PUERTO = Number(process.env.PORT) || 3000;
 const HOST = process.env.HOST || '0.0.0.0';
@@ -128,6 +131,9 @@ function estadoDeSala(sala) {
     // Resultado autoritativo de la ronda: null hasta que el servidor lanza. Quien
     // entra con la ronda ya en `resultados` lo recibe aquí. La semilla nunca se difunde.
     resultado: sala.resultado || null,
+    ...(sala.juego === 'blackjack' && {
+      casa: sala.blackjack ? vistaDeCasa(sala.blackjack.casa, sala.fase === FASES.RESULTADOS) : null
+    }),
     // Tras liquidar, cada apuesta trae además multiplicador, pago, neto y resultado.
     apuestas: sala.apuestas.map(vistaDeApuesta),
     acciones: sala.acciones.map(({ jugadorId, accion, automatica, motivo, mensaje }) => ({
@@ -163,11 +169,10 @@ function crearSala(codigo, juego, anfitrionId, jugador) {
     numero_ronda: 1,
     apuestas: [],
     apuestasConfirmadas: 0,
-    // Juegos rápidos: lo que salió en la ronda y la semilla con que se generó
-    // (`partidas.resultado` y `partidas.semilla_rng` de DOC-03). Los llena
-    // lib/lanzamiento.js al lanzar y los limpia lib/ronda.js al abrir otra ronda.
+    // El resultado, la semilla del RNG y el reparto son propios de esta ronda.
     resultado: null,
     semillaRng: null,
+    blackjack: null,
     acciones: [],
     // Póker: cuánto hay que igualar y cuánto lleva puesto cada quien. Es el
     // contexto que decide si el servidor pasa o se retira por inactividad.
@@ -671,17 +676,30 @@ io.on('connection', (socket) => {
         throw error('JUEGO_SIN_TURNOS', 'Este juego no se reparte ni se juega por turnos: el anfitrión lo inicia con «lanzar».');
       }
 
+      if (!esAnfitrion(sala, jugador.id)) throw error('SOLO_ANFITRION', 'Solo el anfitrión puede repartir.');
+
       const orden = sala.apuestas
         .map((apuesta) => apuesta.jugadorId)
         .filter((jugadorId) => sala.jugadores.has(jugadorId));
       if (orden.length === 0) throw error('SIN_APOSTADORES', 'Nadie confirmó una apuesta en esta ronda.');
 
+      // El cliente no elige cartas ni semilla. Preparamos el reparto antes de
+      // cambiar la fase para no dejar una ronda a medias si el barajado falla.
+      const semilla = sala.juego === 'blackjack' ? nuevaSemilla() : null;
+      const reparto = semilla ? repartirInicial(orden, crearRng(semilla)) : null;
       cambiarFase(sala, FASES.JUGANDO, { jugadorId: jugador.id, apuestasConfirmadas: sala.apuestas.length });
       sala.acciones.length = 0;
       sala.apuestaActual = 0;
       sala.puestas = {};
 
       io.to(sala.codigo).emit('ronda_iniciada', { numeroRonda: sala.numero_ronda, juego: sala.juego, orden });
+      if (reparto) {
+        sala.blackjack = reparto;
+        sala.semillaRng = semilla;
+        for (const [jugadorId, cartas] of reparto.manos) {
+          io.to(jugadorId).emit('cartas', { numeroRonda: sala.numero_ronda, cartas, puntos: contarPuntos(cartas) });
+        }
+      }
       iniciarTurnos(sala, orden); // emite `turno` con su deadline y el estado nuevo
       return { numeroRonda: sala.numero_ronda, orden, limiteTurnoMs: limiteDeTurno(sala.juego) };
     });
@@ -749,11 +767,6 @@ io.on('connection', (socket) => {
 // Arranque y apagado ordenado
 // ---------------------------------------------------------------------------
 
-servidor.listen(PUERTO, HOST, () => {
-  console.log(`MonteCristo escuchando en http://localhost:${PUERTO}`);
-  console.log('Fichas 100 % virtuales; no hay dinero real.');
-});
-
 function apagar(senal) {
   console.log(`\n${senal} recibido: cerrando MonteCristo…`);
   // Se apagan los relojes de turno para no dejar temporizadores vivos al salir.
@@ -767,5 +780,13 @@ function apagar(senal) {
   setTimeout(() => process.exit(0), 5000).unref();
 }
 
-process.on('SIGINT', () => apagar('SIGINT'));
-process.on('SIGTERM', () => apagar('SIGTERM'));
+if (require.main === module) {
+  servidor.listen(PUERTO, HOST, () => {
+    console.log(`MonteCristo escuchando en http://localhost:${PUERTO}`);
+    console.log('Fichas 100 % virtuales; no hay dinero real.');
+  });
+  process.on('SIGINT', () => apagar('SIGINT'));
+  process.on('SIGTERM', () => apagar('SIGTERM'));
+}
+
+module.exports = { servidor, io };
