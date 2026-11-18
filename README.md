@@ -205,7 +205,7 @@ El anfitrión lanza un solo giro para toda la sala. Si sale cero, el resultado d
 `{ numero: 0, color: 'verde' }` y la apuesta del ejemplo cobra **3.600** fichas
 (**+3.500** netas). Si sale otro número, la apuesta cobra 0.
 
-### 8. Probar el reparto inicial de blackjack
+### 9. Probar el reparto y el turno en Blackjack
 
 Desde la consola del navegador en la página de MonteCristo, con el servidor encendido:
 
@@ -215,14 +215,18 @@ mesa21.on('cartas', ({ cartas, puntos }) => console.log('Tu mano:', cartas, punt
 mesa21.on('estado_sala', ({ casa }) => { if (casa) console.log('Casa:', casa.cartas, casa.puntos); });
 await mesa21.emitWithAck('crear_sala', { nombre: 'Ana', avatar: '🦊', juego: 'blackjack' });
 await mesa21.emitWithAck('comenzar');
-await mesa21.emitWithAck('apostar', { monto: 10, opcion: 'mano' });
+await mesa21.emitWithAck('apostar', { monto: 100, opcion: 'mano' });
 await mesa21.emitWithAck('repartir');
+await mesa21.emitWithAck('accion_blackjack', { accion: 'hit' });    // o 'pedir': roba otra carta
+await mesa21.emitWithAck('accion_blackjack', { accion: 'stand' });  // o 'plantarse': cierra la mano
 ```
 
-Cada jugador con apuesta recibe dos cartas en privado. En la mano pública de la casa, `null`
-representa la carta tapada: durante los turnos solo se cuentan los puntos visibles. Cuando todos
-se plantan (o vence su reloj), la casa muestra su segunda carta y su total. Este reparto no
-implementa las jugadas adicionales ni la liquidación de blackjack.
+Cada jugador con apuesta recibe dos cartas en privado. En su turno puede pedir otra carta (`hit` o
+`pedir`) tantas veces como quiera mientras no supere **21**, o plantarse (`stand` o `plantarse`)
+para ceder el turno. Si al pedir se pasa de **21**, pierde su apuesta de inmediato (`resultado: 'pierde'`,
+`pago: 0`) y el turno pasa al siguiente jugador. En la mano pública de la casa, `null` representa
+la carta tapada; cuando terminan los turnos, la casa muestra su segunda carta y su total. Doblar,
+dividir, seguro y el turno/liquidación final contra la casa quedan fuera de este alcance.
 
 ### Modo desarrollo
 
@@ -355,7 +359,7 @@ montecristo/
 │  ├─ lanzamiento.js      # juegos rápidos: lanzar, liquidar y pasar a resultados
 │  ├─ salas.js            # estado en memoria (DOC-03)
 │  ├─ snapshot.js         # data/estado.json
-│  └─ juegos/             # motores implementados: coinflip y roulette
+│  └─ juegos/             # motores implementados: coinflip, roulette y blackjack
 ├─ data/                  # snapshot JSON (opcional)
 ├─ docs/                  # documentación del proyecto (01–05)
 └─ tests/                 # pruebas con los casos de DOC-02

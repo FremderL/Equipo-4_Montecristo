@@ -62,6 +62,7 @@ function armar(opciones = {}) {
     cancelar: relojFalso.cancelar,
     contexto: opciones.contexto,
     validar: opciones.validar,
+    ejecutar: opciones.ejecutar,
     alIniciarTurno: (turno) => avisos.turnos.push(turno),
     alResolver: (registro) => avisos.resueltos.push(registro),
     alTerminar: (resumen) => avisos.terminos.push(resumen),
@@ -295,4 +296,47 @@ test('sin jugadores no hay vuelta que iniciar', () => {
   assert.equal(reloj.terminado, true);
   assert.equal(avisos.terminos[0].motivo, 'sin_jugadores');
   assert.equal(reloj.iniciar().activo, false, 'iniciar dos veces no duplica nada');
+});
+
+test('cuando el motor pide mantener el turno, el jugador sigue activo y se renueva su reloj', () => {
+  const ejecutadas = [];
+  let seguirEnTurno = true;
+  const { reloj, relojFalso, avisos, sala } = armar({
+    juego: 'blackjack',
+    ejecutar: (jugadorId, accion, extra) => {
+      ejecutadas.push({ jugadorId, accion, automatica: Boolean(extra && extra.automatica) });
+      if (accion === 'hit' && seguirEnTurno) return { mantenerTurno: true };
+      if (accion === 'hit') return { mantenerTurno: false, motivo: 'bust', mensaje: 'Se pasó de 21.' };
+      return { mantenerTurno: false };
+    }
+  });
+  reloj.iniciar();
+
+  relojFalso.avanzar(15000);
+  const primero = reloj.jugar('ana', 'pedir');
+  assert.equal(primero.accion, 'hit');
+  assert.equal(primero.tiempoUsadoMs, 15000);
+  assert.equal(reloj.jugadorId, 'ana', 'ana conserva el turno para volver a decidir');
+  assert.equal(reloj.deadline, 40000, 'el reloj se renueva completo desde el instante de la jugada');
+  assert.equal(sala.temporizadores.size, 1);
+
+  // El vencimiento original (25 000 ms) ya no aplica porque ana pidió carta a tiempo.
+  relojFalso.avanzar(15000);
+  assert.equal(reloj.jugadorId, 'ana');
+  assert.equal(avisos.resueltos.length, 1);
+
+  // Si en su segunda carta se pasa de 21, el motor cierra su turno de inmediato.
+  seguirEnTurno = false;
+  const segundo = reloj.jugar('ana', 'hit');
+  assert.equal(segundo.motivo, 'bust');
+  assert.equal(reloj.jugadorId, 'bruno');
+
+  // Y si bruno deja vencer su reloj, el motor también recibe el plantado automático.
+  relojFalso.avanzar(25000);
+  assert.equal(reloj.terminado, true);
+  assert.deepEqual(ejecutadas, [
+    { jugadorId: 'ana', accion: 'hit', automatica: false },
+    { jugadorId: 'ana', accion: 'hit', automatica: false },
+    { jugadorId: 'bruno', accion: 'stand', automatica: true }
+  ]);
 });

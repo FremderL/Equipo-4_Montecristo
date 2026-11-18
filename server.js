@@ -5,9 +5,10 @@
 //   - sirve la interfaz de public/
 //   - expone /health, /api/salas, /api/salas/:codigo y los enlaces /sala/:codigo
 //   - mantiene las salas en memoria y atiende crear_sala / entrar_sala / salir_sala / chat
-//   - lanza los juegos rápidos: el anfitrión manda `lanzar` y el servidor genera el
-//     resultado y paga a toda la sala (Cara o Cruz: ×2 a quien acierta)
-//   - reparte blackjack con un mazo por ronda; solo el dueño recibe su mano y sus puntos
+//   - lanza los juegos rápidos (Cara o Cruz y Ruleta): el servidor genera un
+//     resultado para toda la sala y liquida las apuestas
+//   - reparte blackjack con un mazo por ronda y ejecuta el turno de cada jugador:
+//     pedir otra carta o plantarse (si supera 21, pierde su apuesta de inmediato)
 //   - corre el reloj de turno: si el jugador no responde, el servidor decide por él
 //     (blackjack: se planta · póker: pasa si puede, si no se retira) y la partida sigue
 // El servidor es autoritativo: el navegador solo envía intenciones.
@@ -17,13 +18,24 @@ const http = require('node:http');
 const express = require('express');
 const { Server } = require('socket.io');
 const { REGLAS } = require('./lib/reglas.js');
+const { generarCodigoSala, normalizarCodigoSala } = require('./lib/codigo-sala.js');
 const { FASES, cambiarFase, abrirNuevaRonda, fasePermiteAccion, cancelarTemporizadores, esAnfitrion } = require('./lib/ronda.js');
 const { validarApuesta } = require('./lib/fichas.js');
 const { crearRelojDeTurnos, tiempoDeTurno } = require('./lib/turno.js');
 const { lanzarRonda, vistaDeApuesta, nuevaSemilla } = require('./lib/lanzamiento.js');
 const { crearRng } = require('./lib/rng.js');
 const coinflip = require('./lib/juegos/coinflip.js');
-const { contarPuntos, repartirInicial, vistaDeCasa } = require('./lib/juegos/blackjack.js');
+const roulette = require('./lib/juegos/roulette.js');
+const {
+  contarPuntos,
+  repartirInicial,
+  vistaDeCasa,
+  ESTADOS_MANO,
+  detalleMano,
+  validarAccionJugador,
+  aplicarAccionJugador,
+  liquidarDerrotaInmediata
+} = require('./lib/juegos/blackjack.js');
 
 const PUERTO = Number(process.env.PORT) || 3000;
 const HOST = process.env.HOST || '0.0.0.0';
@@ -269,6 +281,10 @@ function contextoDelTurno(sala, jugadorId) {
  * blackjack y póker) ampliará esto con cartas, doblajes, ciegas y botes.
  */
 function validarAccionDeTurno(sala, jugadorId, accion, extra = {}) {
+  if (sala.juego === 'blackjack') {
+    return validarAccionJugador(sala.blackjack, jugadorId, accion);
+  }
+
   if (sala.juego !== 'poker') return { ok: true };
 
   const { apuestaPorIgualar } = contextoDelTurno(sala, jugadorId);
@@ -315,12 +331,49 @@ function cobrarAccionDePoker(sala, registro) {
 }
 
 /**
+ * Aplica la jugada de turno en blackjack (`hit` o `stand`). Si pide carta, solo
+ * el dueño recibe su mano actualizada; si supera 21, pierde su apuesta en el acto
+ * y cede el turno; con 21 o menos conserva su turno y se renueva su reloj.
+ */
+function ejecutarAccionDeTurno(sala, jugadorId, accion, extra = {}) {
+  if (sala.juego !== 'blackjack' || !sala.blackjack) return {};
+  if (extra.automatica) {
+    const actual = detalleMano(sala.blackjack, jugadorId);
+    if (!actual || actual.estado !== ESTADOS_MANO.JUGANDO) return {};
+  }
+
+  const jugada = aplicarAccionJugador(sala.blackjack, jugadorId, accion);
+  if (jugada.accion === 'hit') {
+    io.to(jugadorId).emit('cartas', {
+      numeroRonda: sala.numero_ronda,
+      cartas: jugada.cartas,
+      puntos: jugada.puntos
+    });
+
+    if (jugada.pasado) {
+      const apuesta = sala.apuestas.find((candidata) => candidata.jugadorId === jugadorId);
+      if (apuesta) liquidarDerrotaInmediata(apuesta);
+      return {
+        mantenerTurno: false,
+        motivo: 'bust',
+        mensaje: 'Se pasó de 21 y perdió de inmediato.'
+      };
+    }
+
+    return { mantenerTurno: true };
+  }
+
+  return { mantenerTurno: false };
+}
+
+/**
  * Devuelve lo apostado mientras no exista liquidación.
  * PUNTO DE EXTENSIÓN: el motor de blackjack (mano de la casa) y el de póker
  * (showdown y botes) sustituirán esta devolución por el pago real de DOC-02.
  */
 function devolverApuestas(sala) {
   for (const apuesta of sala.apuestas) {
+    if (apuesta.resultado !== undefined && apuesta.resultado !== null) continue;
     const jugador = sala.jugadores.get(apuesta.jugadorId);
     if (!jugador) continue; // quien salió en juego no se reembolsa (DOC-04 §5)
     jugador.fichas += apuesta.monto + (Number(sala.puestas[apuesta.jugadorId]) || 0);
@@ -361,6 +414,7 @@ function iniciarTurnos(sala, orden) {
     sala,
     contexto: (jugadorId) => contextoDelTurno(sala, jugadorId),
     validar: (jugadorId, accion, extra) => validarAccionDeTurno(sala, jugadorId, accion, extra),
+    ejecutar: (jugadorId, accion, extra) => ejecutarAccionDeTurno(sala, jugadorId, accion, extra),
     alIniciarTurno: (turno) => {
       io.to(sala.codigo).emit('turno', turno);
       difundirEstado(sala);
@@ -409,12 +463,22 @@ function jugarTurno(socket, ack, juego, datos) {
     if (!sala.turnos) throw error('SIN_TURNO', 'No hay un turno activo en esta mesa.');
 
     const registro = sala.turnos.jugar(jugador.id, datos && datos.accion, { monto: datos && datos.monto });
-    return {
+    const respuesta = {
       accion: registro.accion,
       automatica: registro.automatica,
       saldo: jugador.fichas,
       turno: sala.turnos ? sala.turnos.vistaPublica() : null
     };
+    if (sala.juego === 'blackjack' && sala.blackjack) {
+      const mano = detalleMano(sala.blackjack, jugador.id);
+      if (mano) {
+        respuesta.cartas = mano.cartas;
+        respuesta.puntos = mano.puntos;
+        respuesta.estado = mano.estado;
+        respuesta.pasado = mano.pasado;
+      }
+    }
+    return respuesta;
   });
 }
 
@@ -621,6 +685,7 @@ io.on('connection', (socket) => {
         opcion = revision.opcion;
       } else {
         opcion = typeof opcionSolicitada === 'string' ? opcionSolicitada.trim().toLowerCase() : '';
+        if (!opcion && sala.juego === 'blackjack') opcion = 'mano';
         if (!opcion) throw error('APUESTA_INVALIDA', 'Elige una opción para tu apuesta.');
       }
 

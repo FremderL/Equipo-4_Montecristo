@@ -1,10 +1,33 @@
 'use strict';
-const test = require('node:test');
+const { before, after, test } = require('node:test');
 const assert = require('node:assert/strict');
 const { once } = require('node:events');
 const { io: conectar } = require('socket.io-client');
 const { servidor, io } = require('../server.js');
+const { REGLAS } = require('../lib/reglas.js');
 const { contarPuntos } = require('../lib/juegos/blackjack.js');
+
+let url;
+
+before(async () => {
+  await new Promise((resolve) => servidor.listen(0, '127.0.0.1', resolve));
+  url = `http://127.0.0.1:${servidor.address().port}`;
+});
+
+after(async () => {
+  await new Promise((resolve) => io.close(resolve));
+});
+
+async function abrirClientes(t, cuantos) {
+  const clientes = Array.from({ length: cuantos }, () => conectar(url, {
+    autoConnect: false, reconnection: false, transports: ['websocket'], ackTimeout: 3000
+  }));
+  t.after(() => {
+    for (const socket of clientes) socket.disconnect();
+  });
+  await Promise.all(clientes.map((socket) => once(socket.connect(), 'connect')));
+  return clientes;
+}
 
 async function enviar(socket, evento, ...datos) {
   const respuesta = await socket.emitWithAck(evento, ...datos);
@@ -12,10 +35,13 @@ async function enviar(socket, evento, ...datos) {
   return respuesta;
 }
 
-function esperarEstado(socket, fase) {
+function esperarEstado(socket, predicadoOFase) {
+  const cumple = typeof predicadoOFase === 'function'
+    ? predicadoOFase
+    : (estado) => estado.fase === predicadoOFase;
   return new Promise((resolve) => {
     function recibir(estado) {
-      if (estado.fase !== fase) return;
+      if (!cumple(estado)) return;
       socket.off('estado_sala', recibir);
       resolve(estado);
     }
@@ -24,16 +50,8 @@ function esperarEstado(socket, fase) {
 }
 
 test('repartir envía manos privadas solo a los apostadores y destapa la casa al cierre', { timeout: 10000 }, async (t) => {
-  await new Promise((resolve) => servidor.listen(0, '127.0.0.1', resolve));
-  const url = `http://127.0.0.1:${servidor.address().port}`;
-  const clientes = ['host', 'ana', 'bruno'].map(() => conectar(url, {
-    autoConnect: false, reconnection: false, transports: ['websocket'], ackTimeout: 3000
-  }));
-  t.after(async () => {
-    for (const socket of clientes) socket.disconnect();
-    await new Promise((resolve) => io.close(resolve));
-  });
-  const [host, ana, bruno] = clientes;
+  const [host, ana, bruno] = await abrirClientes(t, 3);
+  const clientes = [host, ana, bruno];
   const manos = clientes.map((socket) => {
     const recibidas = [];
     socket.on('cartas', (mano) => recibidas.push(mano));
@@ -42,7 +60,7 @@ test('repartir envía manos privadas solo a los apostadores y destapa la casa al
   // El anfitrión no apuesta: todos los eventos que reciba deben ser públicos.
   const publicos = [];
   host.onAny((evento, datos) => publicos.push(datos));
-  await Promise.all(clientes.map((socket) => once(socket.connect(), 'connect')));
+
   const { codigo } = await enviar(host, 'crear_sala', { nombre: 'Host', avatar: '🙂', juego: 'blackjack' });
   await enviar(ana, 'entrar_sala', { codigo, nombre: 'Ana', avatar: '🦊' });
   await enviar(bruno, 'entrar_sala', { codigo, nombre: 'Bruno', avatar: '🐼' });
@@ -86,4 +104,171 @@ test('repartir envía manos privadas solo a los apostadores y destapa la casa al
   const siguiente = await alAbrir;
   assert.equal(siguiente.numeroRonda, 2);
   assert.equal(siguiente.casa, null, 'la siguiente ronda empieza sin cartas');
+});
+
+test('si el jugador se pasa de 21 al pedir, pierde su apuesta de inmediato y el turno pasa al siguiente', { timeout: 10000 }, async (t) => {
+  const [host, ana, bruno] = await abrirClientes(t, 3);
+  const manosAna = [];
+  const manosBruno = [];
+  const manosHost = [];
+  ana.on('cartas', (mano) => manosAna.push(mano));
+  bruno.on('cartas', (mano) => manosBruno.push(mano));
+  host.on('cartas', (mano) => manosHost.push(mano));
+
+  let ultimoEstadoHost = null;
+  host.on('estado_sala', (estado) => { ultimoEstadoHost = estado; });
+  const publicosBruno = [];
+  bruno.on('estado_sala', (estado) => publicosBruno.push(estado));
+
+  const { codigo } = await enviar(host, 'crear_sala', { nombre: 'Host', avatar: '🙂', juego: 'blackjack' });
+  await enviar(ana, 'entrar_sala', { codigo, nombre: 'Ana', avatar: '🦊' });
+  await enviar(bruno, 'entrar_sala', { codigo, nombre: 'Bruno', avatar: '🐼' });
+  await enviar(host, 'comenzar');
+
+  await enviar(ana, 'apostar', { monto: 100, opcion: 'mano' });
+  await enviar(bruno, 'apostar', { monto: 50, opcion: 'mano' });
+  await enviar(host, 'repartir');
+
+  // Bruno no puede actuar en el turno de Ana; tampoco se aceptan acciones no implementadas.
+  assert.equal((await bruno.emitWithAck('accion_blackjack', { accion: 'stand' })).error.codigo, 'TURNO_AJENO');
+  assert.equal((await ana.emitWithAck('accion_blackjack', { accion: 'double' })).error.codigo, 'ACCION_INVALIDA');
+  assert.equal((await ana.emitWithAck('accion_blackjack', { accion: 'split' })).error.codigo, 'ACCION_INVALIDA');
+
+  // Ana pide cartas hasta superar 21 (el servidor ignora cualquier carta enviada por el cliente).
+  let respuestaAna;
+  let cantidadPrevia = 2;
+  do {
+    const cartaRecibida = once(ana, 'cartas');
+    respuestaAna = await enviar(ana, 'accion_blackjack', { accion: 'pedir', carta: 'A♠' });
+    const [manoPrivada] = await cartaRecibida;
+
+    assert.equal(respuestaAna.cartas.length, cantidadPrevia + 1);
+    assert.equal(respuestaAna.puntos, contarPuntos(respuestaAna.cartas));
+    assert.deepEqual(manoPrivada, {
+      numeroRonda: 1,
+      cartas: respuestaAna.cartas,
+      puntos: respuestaAna.puntos
+    });
+    cantidadPrevia = respuestaAna.cartas.length;
+
+    if (!respuestaAna.pasado) {
+      assert.ok(respuestaAna.puntos <= 21);
+      assert.equal(respuestaAna.estado, 'jugando');
+      assert.equal(respuestaAna.turno.jugadorId, ana.id, 'con 21 o menos conserva su turno');
+    }
+  } while (!respuestaAna.pasado);
+
+  // En cuanto supera 21, Ana pierde de inmediato aunque Bruno aún no haya jugado su turno.
+  assert.ok(respuestaAna.puntos > 21);
+  assert.equal(respuestaAna.estado, 'pasado');
+  assert.equal(respuestaAna.saldo, REGLAS.SALDO_INICIAL - 100);
+  assert.equal(respuestaAna.turno.jugadorId, bruno.id, 'el turno pasó de inmediato a Bruno');
+
+  const estadoTrasBust = ultimoEstadoHost?.fase === 'jugando' && ultimoEstadoHost?.turno?.jugadorId === bruno.id
+    ? ultimoEstadoHost
+    : await esperarEstado(host, (estado) => estado.fase === 'jugando' && estado.turno?.jugadorId === bruno.id);
+  const apuestaAna = estadoTrasBust.apuestas.find((apuesta) => apuesta.jugadorId === ana.id);
+  const apuestaBruno = estadoTrasBust.apuestas.find((apuesta) => apuesta.jugadorId === bruno.id);
+  assert.deepEqual(apuestaAna, {
+    jugadorId: ana.id,
+    nombre: 'Ana',
+    monto: 100,
+    opcion: 'mano',
+    multiplicador: 0,
+    pago: 0,
+    neto: -100,
+    resultado: 'pierde'
+  });
+  assert.equal(apuestaBruno.resultado, null, 'la apuesta de Bruno sigue abierta');
+  assert.equal(estadoTrasBust.acciones.at(-1).motivo, 'bust');
+
+  // Ana ya no está en turno: cualquier nuevo intento se rechaza.
+  assert.equal((await ana.emitWithAck('accion_blackjack', { accion: 'hit' })).error.codigo, 'TURNO_AJENO');
+  assert.equal((await ana.emitWithAck('accion_blackjack', { accion: 'stand' })).error.codigo, 'TURNO_AJENO');
+  assert.equal(manosHost.length, 0);
+  assert.equal(manosBruno.length, 1, 'Bruno no recibió las cartas pedidas por Ana');
+  const cartasNuevasDeAna = respuestaAna.cartas.slice(2);
+  const vistoPorBruno = JSON.stringify(publicosBruno);
+  for (const carta of cartasNuevasDeAna) {
+    assert.ok(!vistoPorBruno.includes(JSON.stringify(carta)), 'las cartas pedidas por Ana siguen siendo privadas');
+  }
+
+  // Bruno se planta: la ronda cierra y Ana NO recupera las 100 fichas que perdió al pasarse.
+  const cierre = esperarEstado(host, 'resultados');
+  const respuestaBruno = await enviar(bruno, 'accion_blackjack', { accion: 'plantarse' });
+  assert.equal(respuestaBruno.accion, 'stand');
+  assert.equal(respuestaBruno.estado, 'plantado');
+  assert.equal(respuestaBruno.pasado, false);
+
+  const estadoFinal = await cierre;
+  const jugadorAna = estadoFinal.jugadores.find((j) => j.id === ana.id);
+  assert.equal(jugadorAna.fichas, REGLAS.SALDO_INICIAL - 100, 'la derrota inmediata de Ana es definitiva');
+  const todasLasCartas = [...respuestaAna.cartas, ...respuestaBruno.cartas, ...estadoFinal.casa.cartas];
+  assert.equal(new Set(todasLasCartas).size, todasLasCartas.length, 'todas las cartas salieron del mismo mazo sin reposición');
+});
+
+test('pedir carta sin pasarse permite seguir jugando y luego plantarse; si el único jugador se pasa la ronda termina', { timeout: 10000 }, async (t) => {
+  const [ana] = await abrirClientes(t, 1);
+  let ultimoEstado = null;
+  ana.on('estado_sala', (estado) => { ultimoEstado = estado; });
+
+  await enviar(ana, 'crear_sala', { nombre: 'Ana', avatar: '🦊', juego: 'blackjack' });
+  await enviar(ana, 'comenzar');
+
+  // Buscamos una mano donde tras pedir siga con <= 21 y luego se plante, y otra donde se pase siendo única jugadora.
+  let proboPedirYPlantarse = false;
+  let proboPasarseUnica = false;
+
+  for (let intento = 0; intento < 25 && (!proboPedirYPlantarse || !proboPasarseUnica); intento += 1) {
+    if (intento > 0) await enviar(ana, 'nueva_ronda');
+    const saldoAntes = (await enviar(ana, 'apostar', { monto: 20 })).saldo;
+    const manoInicial = once(ana, 'cartas');
+    await enviar(ana, 'repartir');
+    const [{ puntos: puntosIniciales }] = await manoInicial;
+
+    if (!proboPedirYPlantarse && puntosIniciales <= 16) {
+      const pedida = await enviar(ana, 'accion_blackjack', { accion: 'hit' });
+      if (!pedida.pasado) {
+        assert.equal(pedida.estado, 'jugando');
+        assert.equal(pedida.turno.jugadorId, ana.id);
+        const alCerrar = esperarEstado(ana, 'resultados');
+        const plantada = await enviar(ana, 'accion_blackjack', { accion: 'stand' });
+        assert.equal(plantada.estado, 'plantado');
+        assert.equal(plantada.puntos, pedida.puntos);
+        assert.equal((await alCerrar).fase, 'resultados');
+        proboPedirYPlantarse = true;
+        continue;
+      }
+      // Si se pasó en esta mano, ya cubrió el caso de único jugador que se pasa.
+      const cerrado = ultimoEstado?.fase === 'resultados' ? ultimoEstado : await esperarEstado(ana, 'resultados');
+      assert.equal(cerrado.apuestas[0].resultado, 'pierde');
+      assert.equal(cerrado.jugadores[0].fichas, saldoAntes);
+      proboPasarseUnica = true;
+      continue;
+    }
+
+    if (!proboPasarseUnica) {
+      const alCerrar = esperarEstado(ana, 'resultados');
+      let ultima;
+      do {
+        ultima = await enviar(ana, 'accion_blackjack', { accion: 'hit' });
+      } while (!ultima.pasado);
+      const cerrado = await alCerrar;
+      assert.ok(ultima.puntos > 21);
+      assert.equal(cerrado.fase, 'resultados');
+      assert.equal(cerrado.apuestas[0].resultado, 'pierde');
+      assert.equal(cerrado.apuestas[0].pago, 0);
+      assert.equal(cerrado.apuestas[0].neto, -20);
+      assert.equal(cerrado.jugadores[0].fichas, saldoAntes, 'pierde las 20 fichas apostadas de inmediato');
+      proboPasarseUnica = true;
+      continue;
+    }
+
+    const alCerrar = esperarEstado(ana, 'resultados');
+    await enviar(ana, 'accion_blackjack', { accion: 'stand' });
+    await alCerrar;
+  }
+
+  assert.equal(proboPedirYPlantarse, true, 'probó pedir carta sin pasarse y plantarse');
+  assert.equal(proboPasarseUnica, true, 'probó pasarse de 21 siendo la única jugadora');
 });
