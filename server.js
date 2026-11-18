@@ -3,7 +3,7 @@
 // MonteCristo · servidor Express + Socket.IO
 // Implementa lo descrito en docs/04-arquitectura.md:
 //   - sirve la interfaz de public/
-//   - expone /health, /api/salas y /api/salas/:codigo
+//   - expone /health, /api/salas, /api/salas/:codigo y los enlaces /sala/:codigo
 //   - mantiene las salas en memoria y atiende crear_sala / entrar_sala / salir_sala / chat
 //   - lanza los juegos rápidos: el anfitrión manda `lanzar` y el servidor genera el
 //     resultado y paga a toda la sala (Cara o Cruz: ×2 a quien acierta)
@@ -13,10 +13,10 @@
 
 const path = require('node:path');
 const http = require('node:http');
-const crypto = require('node:crypto');
 const express = require('express');
 const { Server } = require('socket.io');
 const { REGLAS } = require('./lib/reglas.js');
+const { generarCodigoSala, normalizarCodigoSala } = require('./lib/codigo-sala.js');
 const { FASES, cambiarFase, abrirNuevaRonda, fasePermiteAccion, cancelarTemporizadores } = require('./lib/ronda.js');
 const { validarApuesta } = require('./lib/fichas.js');
 const { crearRelojDeTurnos, tiempoDeTurno } = require('./lib/turno.js');
@@ -27,7 +27,6 @@ const PUERTO = Number(process.env.PORT) || 3000;
 const HOST = process.env.HOST || '0.0.0.0';
 const MAX_SALAS = Number(process.env.MAX_SALAS) > 0 ? Number(process.env.MAX_SALAS) : 50;
 const JUEGOS = ['coinflip', 'dice', 'roulette', 'blackjack', 'poker'];
-const ALFABETO_CODIGO = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
 
 /**
  * Juegos rápidos con motor listo (lib/juegos/*.js): un solo lanzamiento y
@@ -67,21 +66,6 @@ function error(codigo, mensaje) {
   const fallo = new Error(mensaje);
   fallo.codigo = codigo;
   return fallo;
-}
-
-function generarCodigo() {
-  for (let intento = 0; intento < 100; intento += 1) {
-    let codigo = '';
-    for (let i = 0; i < REGLAS.LONGITUD_CODIGO_SALA; i += 1) {
-      codigo += ALFABETO_CODIGO[crypto.randomInt(ALFABETO_CODIGO.length)];
-    }
-    if (!salas.has(codigo)) return codigo;
-  }
-  throw error('SIN_CODIGO', 'No se pudo generar un código de sala libre. Inténtalo de nuevo.');
-}
-
-function normalizarCodigo(codigo) {
-  return String(codigo || '').trim().toUpperCase();
 }
 
 function validarNombre(nombre) {
@@ -446,6 +430,15 @@ app.get('/health', (req, res) => {
   res.json({ ok: true });
 });
 
+app.get('/sala/:codigo', (req, res) => {
+  const codigo = normalizarCodigoSala(req.params.codigo);
+  if (!codigo) {
+    res.status(400).send('El código de sala debe tener cinco letras o números.');
+    return;
+  }
+  res.redirect(`/perfil.html?accion=entrar&codigo=${codigo}`);
+});
+
 app.get('/api/salas', (req, res) => {
   const lista = Array.from(salas.values()).map((sala) => ({
     codigo: sala.codigo,
@@ -458,7 +451,7 @@ app.get('/api/salas', (req, res) => {
 });
 
 app.get('/api/salas/:codigo', (req, res) => {
-  const codigo = normalizarCodigo(req.params.codigo);
+  const codigo = normalizarCodigoSala(req.params.codigo);
   const sala = salas.get(codigo);
 
   if (!sala) {
@@ -525,9 +518,10 @@ io.on('connection', (socket) => {
 
       const juego = validarJuego(datos && datos.juego);
       const jugador = crearJugador(socket.id, datos || {});
-      const codigo = generarCodigo();
+      const codigo = generarCodigoSala(salas);
       const sala = crearSala(codigo, juego, socket.id, jugador);
 
+      // Se registra en el mismo paso síncrono para que otra creación no tome el mismo código.
       salas.set(codigo, sala);
       abandonarSala(socket);
       socket.data.codigoSala = codigo;
@@ -544,25 +538,30 @@ io.on('connection', (socket) => {
 
   socket.on('entrar_sala', (datos, ack) => {
     try {
-      const codigo = normalizarCodigo(datos && datos.codigo);
-      if (!new RegExp(`^[A-Z0-9]{${REGLAS.LONGITUD_CODIGO_SALA}}$`).test(codigo)) {
+      const codigo = normalizarCodigoSala(datos && datos.codigo);
+      if (!codigo) {
         throw error('CODIGO_INVALIDO', 'El código de sala no es válido. Debe tener cinco letras o números.');
       }
 
       const sala = salas.get(codigo);
       if (!sala) throw error('SALA_NO_ENCONTRADA', 'La sala no existe o ya se cerró.');
-      if (sala.jugadores.size >= REGLAS.JUGADORES_POR_SALA) {
-        throw error('SALA_LLENA', `La sala ya tiene ${REGLAS.JUGADORES_POR_SALA} jugadores.`);
+
+      if (socket.data.codigoSala === codigo && sala.jugadores.has(socket.id)) {
+        // Repetir la solicitud no debe cambiar el asiento, el saldo ni el anfitrión.
+        socket.emit('estado_sala', estadoDeSala(sala));
+      } else {
+        if (sala.jugadores.size >= REGLAS.JUGADORES_POR_SALA) {
+          throw error('SALA_LLENA', `La sala ya tiene ${REGLAS.JUGADORES_POR_SALA} jugadores.`);
+        }
+
+        const jugador = crearJugador(socket.id, datos);
+        abandonarSala(socket);
+        sala.jugadores.set(jugador.id, jugador);
+        socket.data.codigoSala = codigo;
+        socket.join(codigo);
+        difundirEstado(sala);
       }
 
-      const jugador = crearJugador(socket.id, datos || {});
-      sala.jugadores.set(jugador.id, jugador);
-
-      abandonarSala(socket);
-      socket.data.codigoSala = codigo;
-      socket.join(codigo);
-
-      difundirEstado(sala);
       if (typeof ack === 'function') ack({ ok: true, codigo });
     } catch (fallo) {
       if (typeof ack === 'function') {
@@ -749,11 +748,6 @@ io.on('connection', (socket) => {
 // Arranque y apagado ordenado
 // ---------------------------------------------------------------------------
 
-servidor.listen(PUERTO, HOST, () => {
-  console.log(`MonteCristo escuchando en http://localhost:${PUERTO}`);
-  console.log('Fichas 100 % virtuales; no hay dinero real.');
-});
-
 function apagar(senal) {
   console.log(`\n${senal} recibido: cerrando MonteCristo…`);
   // Se apagan los relojes de turno para no dejar temporizadores vivos al salir.
@@ -767,5 +761,14 @@ function apagar(senal) {
   setTimeout(() => process.exit(0), 5000).unref();
 }
 
-process.on('SIGINT', () => apagar('SIGINT'));
-process.on('SIGTERM', () => apagar('SIGTERM'));
+if (require.main === module) {
+  servidor.listen(PUERTO, HOST, () => {
+    console.log(`MonteCristo escuchando en http://localhost:${PUERTO}`);
+    console.log('Fichas 100 % virtuales; no hay dinero real.');
+  });
+
+  process.on('SIGINT', () => apagar('SIGINT'));
+  process.on('SIGTERM', () => apagar('SIGTERM'));
+}
+
+module.exports = { servidor, io };

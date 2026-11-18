@@ -18,5 +18,7 @@
     "express": "^4",
     "socket.io": "^4"
   },
-  "devDependencies": {}
+  "devDependencies": {
+    "socket.io-client": "^4.8.4"
+  }
 }
