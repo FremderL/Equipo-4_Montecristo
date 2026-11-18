@@ -1063,6 +1063,24 @@ h3 {
   letter-spacing: 0.16em;
 }
 
+.sala-lista__estado-copia:not(:empty) {
+  margin-top: var(--esp-2);
+}
+
+.sala-lista__ocupacion {
+  margin-top: var(--esp-4);
+  font-weight: var(--peso-fuerte);
+}
+
+.sala-lista__jugadores {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--esp-2);
+  margin: var(--esp-2) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
 .solo-escritorio {
   display: none;
 }
