@@ -83,6 +83,19 @@ function cargarSocketIO() {
         actualizarEstadoConexion('no-disponible', 'Servidor no disponible');
       });
       socket.on('estado_sala', mostrarJugadoresDeSala);
+      socket.on('sala_cerrada', ({ motivo } = {}) => {
+        // El servidor cierra la sala cuando se va el último jugador.
+        const salaLista = buscarPorId('sala-lista');
+        if (salaLista && !salaLista.hidden) {
+          salaLista.hidden = true;
+          mostrarAviso(
+            buscarPorId('error-perfil'),
+            motivo === 'sala_vacia'
+              ? 'La sala se cerró: ya no queda nadie en la mesa.'
+              : 'La sala se cerró.'
+          );
+        }
+      });
       socket.on('error', manejarErrorServidor);
     } catch (error) {
       actualizarEstadoConexion('no-disponible', 'Servidor no disponible');

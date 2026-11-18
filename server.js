@@ -18,20 +18,8 @@ const http = require('node:http');
 const express = require('express');
 const { Server } = require('socket.io');
 const { REGLAS } = require('./lib/reglas.js');
-const { FASES } = require('./lib/ronda.js');
-const {
-  ESTADOS_SALA,
-  MAX_SALAS_POR_DEFECTO,
-  normalizarCodigo,
-  actualizarFaseSala,
-  iniciarSiguienteRonda,
-  estadoDeSala,
-  resumenDeSala,
-  consultaDeSala,
-  crearAlmacenSalas,
-  esAnfitrion,
-  fasePermiteAccion
-} = require('./lib/salas.js');
+const { generarCodigoSala, normalizarCodigoSala } = require('./lib/codigo-sala.js');
+const { FASES, cambiarFase, abrirNuevaRonda, fasePermiteAccion, cancelarTemporizadores, esAnfitrion } = require('./lib/ronda.js');
 const { validarApuesta } = require('./lib/fichas.js');
 // Ticket 2: crear, buscar y actualizar jugadores pasa SIEMPRE por estas funciones.
 const jugadores = require('./lib/jugadores.js');
@@ -42,7 +30,16 @@ const { lanzarRonda, nuevaSemilla } = require('./lib/lanzamiento.js');
 const { crearRng } = require('./lib/rng.js');
 const coinflip = require('./lib/juegos/coinflip.js');
 const roulette = require('./lib/juegos/roulette.js');
-const { contarPuntos, repartirInicial, vistaDeCasa } = require('./lib/juegos/blackjack.js');
+const {
+  contarPuntos,
+  repartirInicial,
+  vistaDeCasa,
+  ESTADOS_MANO,
+  detalleMano,
+  validarAccionJugador,
+  aplicarAccionJugador,
+  liquidarDerrotaInmediata
+} = require('./lib/juegos/blackjack.js');
 
 const PUERTO_POR_DEFECTO = 3000;
 const PUERTO = Number(process.env.PORT) || PUERTO_POR_DEFECTO;
@@ -103,8 +100,19 @@ function estadoPublico(sala) {
   return estado;
 }
 
-function difundirEstado(sala) {
-  io.to(sala.codigo).emit('estado_sala', estadoPublico(sala));
+/** Estado que viaja en `estado_sala`: el de la sala más el motivo del aviso. */
+function estadoConMotivo(sala, motivo) {
+  return { ...estadoPublico(sala), motivo };
+}
+
+/**
+ * Ticket 2: manda el estado completo de la sala a TODOS sus jugadores cada vez
+ * que algo cambia (alguien entra, sale, apuesta, se abre la ronda, se lanza…).
+ * `motivo` dice por qué se envió, así el navegador puede reaccionar sin adivinar.
+ */
+function difundirEstado(sala, motivo = 'cambio') {
+  if (!sala || sala.estado === ESTADOS_SALA.CERRADA) return;
+  io.to(sala.codigo).emit('estado_sala', estadoConMotivo(sala, motivo));
 }
 
 /** Carga el saldo guardado (o crea el perfil con el saldo inicial) antes de sentarlo. */
@@ -202,6 +210,10 @@ function contextoDelTurno(sala, jugadorId) {
  * blackjack y póker) ampliará esto con cartas, doblajes, ciegas y botes.
  */
 function validarAccionDeTurno(sala, jugadorId, accion, extra = {}) {
+  if (sala.juego === 'blackjack') {
+    return validarAccionJugador(sala.blackjack, jugadorId, accion);
+  }
+
   if (sala.juego !== 'poker') return { ok: true };
 
   const { apuestaPorIgualar } = contextoDelTurno(sala, jugadorId);
@@ -248,12 +260,49 @@ function cobrarAccionDePoker(sala, registro) {
 }
 
 /**
+ * Aplica la jugada de turno en blackjack (`hit` o `stand`). Si pide carta, solo
+ * el dueño recibe su mano actualizada; si supera 21, pierde su apuesta en el acto
+ * y cede el turno; con 21 o menos conserva su turno y se renueva su reloj.
+ */
+function ejecutarAccionDeTurno(sala, jugadorId, accion, extra = {}) {
+  if (sala.juego !== 'blackjack' || !sala.blackjack) return {};
+  if (extra.automatica) {
+    const actual = detalleMano(sala.blackjack, jugadorId);
+    if (!actual || actual.estado !== ESTADOS_MANO.JUGANDO) return {};
+  }
+
+  const jugada = aplicarAccionJugador(sala.blackjack, jugadorId, accion);
+  if (jugada.accion === 'hit') {
+    io.to(jugadorId).emit('cartas', {
+      numeroRonda: sala.numero_ronda,
+      cartas: jugada.cartas,
+      puntos: jugada.puntos
+    });
+
+    if (jugada.pasado) {
+      const apuesta = sala.apuestas.find((candidata) => candidata.jugadorId === jugadorId);
+      if (apuesta) liquidarDerrotaInmediata(apuesta);
+      return {
+        mantenerTurno: false,
+        motivo: 'bust',
+        mensaje: 'Se pasó de 21 y perdió de inmediato.'
+      };
+    }
+
+    return { mantenerTurno: true };
+  }
+
+  return { mantenerTurno: false };
+}
+
+/**
  * Devuelve lo apostado mientras no exista liquidación.
  * PUNTO DE EXTENSIÓN: el motor de blackjack (mano de la casa) y el de póker
  * (showdown y botes) sustituirán esta devolución por el pago real de DOC-02.
  */
 function devolverApuestas(sala) {
   for (const apuesta of sala.apuestas) {
+    if (apuesta.resultado !== undefined && apuesta.resultado !== null) continue;
     const jugador = sala.jugadores.get(apuesta.jugadorId);
     if (!jugador || apuesta.abandonada) continue; // quien salió en juego no se reembolsa
     jugador.fichas += apuesta.monto + (Number(sala.puestas[apuesta.jugadorId]) || 0);
@@ -329,7 +378,7 @@ function cerrarMano(sala, motivo) {
     guardarRondaTerminada(sala);
   }
   io.to(sala.codigo).emit('turno', turnoSinJugador(sala, motivo || 'mano_cerrada'));
-  difundirEstado(sala);
+  difundirEstado(sala, 'resultado');
 }
 
 function cancelarTurnos(sala, motivo = 'cancelado') {
@@ -353,9 +402,10 @@ function iniciarTurnos(sala, orden) {
     sala,
     contexto: (jugadorId) => contextoDelTurno(sala, jugadorId),
     validar: (jugadorId, accion, extra) => validarAccionDeTurno(sala, jugadorId, accion, extra),
+    ejecutar: (jugadorId, accion, extra) => ejecutarAccionDeTurno(sala, jugadorId, accion, extra),
     alIniciarTurno: (turno) => {
       io.to(sala.codigo).emit('turno', turno);
-      difundirEstado(sala);
+      difundirEstado(sala, 'turno');
     },
     alResolver: (registro) => {
       cobrarAccionDePoker(sala, registro);
@@ -371,7 +421,7 @@ function iniciarTurnos(sala, orden) {
           numeroRonda: sala.numero_ronda
         });
       }
-      difundirEstado(sala);
+      difundirEstado(sala, 'turno');
     },
     alTerminar: (resumen) => {
       sala.turnos = null;
@@ -379,7 +429,7 @@ function iniciarTurnos(sala, orden) {
     },
     alCancelar: (resumen) => {
       io.to(sala.codigo).emit('turno', turnoSinJugador(sala, resumen.motivo));
-      difundirEstado(sala);
+      difundirEstado(sala, 'turno');
     }
   });
 
@@ -401,12 +451,22 @@ function jugarTurno(socket, ack, juego, datos) {
     if (!sala.turnos) throw error('SIN_TURNO', 'No hay un turno activo en esta mesa.');
 
     const registro = sala.turnos.jugar(jugador.id, datos && datos.accion, { monto: datos && datos.monto });
-    return {
+    const respuesta = {
       accion: registro.accion,
       automatica: registro.automatica,
       saldo: jugador.fichas,
       turno: sala.turnos ? sala.turnos.vistaPublica() : null
     };
+    if (sala.juego === 'blackjack' && sala.blackjack) {
+      const mano = detalleMano(sala.blackjack, jugador.id);
+      if (mano) {
+        respuesta.cartas = mano.cartas;
+        respuesta.puntos = mano.puntos;
+        respuesta.estado = mano.estado;
+        respuesta.pasado = mano.pasado;
+      }
+    }
+    return respuesta;
   });
 }
 
@@ -516,7 +576,7 @@ io.on('connection', (socket) => {
       socket.data.codigoSala = sala.codigo;
       socket.join(sala.codigo);
 
-      socket.emit('estado_sala', estadoPublico(sala));
+      socket.emit('estado_sala', estadoConMotivo(sala, 'creada'));
       if (typeof ack === 'function') ack({ ok: true, codigo: sala.codigo });
     } catch (fallo) {
       if (typeof ack === 'function') {
@@ -540,9 +600,10 @@ io.on('connection', (socket) => {
 
       if (yaEstaba) {
         // Repetir la solicitud no cambia el asiento, el saldo ni el anfitrión.
-        socket.emit('estado_sala', estadoPublico(sala));
+        socket.emit('estado_sala', estadoConMotivo(sala, 'reconexion'));
       } else {
-        difundirEstado(sala);
+        // Ticket 2: todos los de la mesa (incluido quien acaba de entrar) ven el estado nuevo.
+        difundirEstado(sala, 'entrada');
       }
 
       if (typeof ack === 'function') ack({ ok: true, codigo: sala.codigo });
@@ -553,9 +614,17 @@ io.on('connection', (socket) => {
     }
   });
 
+  // El jugador se va de la sala: se libera su asiento (o se cierra la sala si era
+  // el último) y el resto recibe el estado nuevo al instante.
   socket.on('salir_sala', (datos, ack) => {
-    abandonarSala(socket);
-    if (typeof ack === 'function') ack({ ok: true });
+    const salida = abandonarSala(socket);
+    if (typeof ack === 'function') {
+      ack({
+        ok: true,
+        codigo: salida.sala ? salida.sala.codigo : null,
+        salaCerrada: Boolean(salida.cerrada)
+      });
+    }
   });
 
   // -------------------------------------------------------------------------
@@ -570,7 +639,7 @@ io.on('connection', (socket) => {
         throw error('FASE_INVALIDA', 'La ronda ya está en marcha o en resultados.');
       }
       actualizarFaseSala(sala, FASES.APUESTAS, { accion: 'comenzar', jugadorId: jugador.id });
-      difundirEstado(sala);
+      difundirEstado(sala, 'fase');
       return { fase: sala.fase, numeroRonda: sala.numero_ronda };
     });
   });
@@ -601,6 +670,7 @@ io.on('connection', (socket) => {
         opcion = revision.opcion;
       } else {
         opcion = typeof opcionSolicitada === 'string' ? opcionSolicitada.trim().toLowerCase() : '';
+        if (!opcion && sala.juego === 'blackjack') opcion = 'mano';
         if (!opcion) throw error('APUESTA_INVALIDA', 'Elige una opción para tu apuesta.');
       }
 
@@ -610,7 +680,7 @@ io.on('connection', (socket) => {
       sala.bote += monto;
 
       io.to(sala.codigo).emit('apuesta_confirmada', { jugadorId: jugador.id, nombre: jugador.nombre, monto, opcion });
-      difundirEstado(sala);
+      difundirEstado(sala, 'apuesta');
       return { saldo: jugador.fichas, monto, opcion };
     });
   });
@@ -637,7 +707,7 @@ io.on('connection', (socket) => {
       guardarRondaTerminada(sala);
       io.to(sala.codigo).emit('ronda_iniciada', { numeroRonda: ronda.numeroRonda, juego: ronda.juego });
       io.to(sala.codigo).emit('resultado', ronda);
-      difundirEstado(sala);
+      difundirEstado(sala, 'resultado');
       return { numeroRonda: ronda.numeroRonda, resultado: ronda.resultado, saldo: jugador.fichas };
     });
   });
@@ -696,7 +766,7 @@ io.on('connection', (socket) => {
       iniciarSiguienteRonda(sala, jugador.id);
       sala.turnos = null;
 
-      difundirEstado(sala);
+      difundirEstado(sala, 'fase');
       return { fase: sala.fase, numeroRonda: sala.numero_ronda };
     });
   });
