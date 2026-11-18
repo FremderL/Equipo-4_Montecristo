@@ -26,6 +26,7 @@ const {
   estadisticasDeJugador
 } = require('../lib/historial.js');
 const { servidor, io } = require('../server.js');
+const { buscarJugadorPorId } = require('../lib/jugadores.js');
 
 const ESPERA_MS = 4000;
 let origen;
@@ -71,10 +72,14 @@ test('al lanzar una ronda, historial_rondas guarda sala, juego, jugador, apuesta
 
   const entrado = await emitir(invitado, 'entrar_sala', { codigo, nombre: 'Bruno', avatar: '🐯' });
   assert.equal(entrado.ok, true);
+  assert.equal(buscarJugadorPorId(anfitrion.id).saldo, 1000);
+  assert.equal(buscarJugadorPorId(invitado.id).saldo, 1000);
 
   assert.equal((await emitir(anfitrion, 'comenzar')).ok, true);
   assert.equal((await emitir(anfitrion, 'apostar', { monto: 100, opcion: 'cara' })).ok, true);
   assert.equal((await emitir(invitado, 'apostar', { monto: 50, opcion: 'cruz' })).ok, true);
+  assert.equal(buscarJugadorPorId(anfitrion.id).saldo, 1000, 'no se persiste una apuesta pendiente');
+  assert.equal(buscarJugadorPorId(invitado.id).saldo, 1000);
 
   const lanzada = await emitir(anfitrion, 'lanzar');
   assert.equal(lanzada.ok, true, JSON.stringify(lanzada));
@@ -102,6 +107,14 @@ test('al lanzar una ronda, historial_rondas guarda sala, juego, jugador, apuesta
   assert.equal(bruno.resultado, ganoAna ? 'pierde' : 'gana');
   assert.equal(bruno.pago, ganoAna ? 0 : 100);
 
+  const saldoAna = 1000 - ana.apuesta + ana.pago;
+  const saldoBruno = 1000 - bruno.apuesta + bruno.pago;
+  assert.equal(lanzada.saldo, saldoAna);
+  assert.equal(buscarJugadorPorId(anfitrion.id).saldo, saldoAna);
+  assert.equal(buscarJugadorPorId(invitado.id).saldo, saldoBruno);
+  assert.equal((await emitir(anfitrion, 'lanzar')).error.codigo, 'RONDA_LIQUIDADA');
+  assert.equal(buscarJugadorPorId(anfitrion.id).saldo, saldoAna);
+
   // La misma ronda no se duplica; una ronda nueva sí se añade. `nueva_ronda`
   // devuelve la sala a la fase de apuestas, así que se apuesta y se lanza.
   const nueva = await emitir(anfitrion, 'nueva_ronda');
@@ -109,6 +122,9 @@ test('al lanzar una ronda, historial_rondas guarda sala, juego, jugador, apuesta
   assert.equal((await emitir(anfitrion, 'apostar', { monto: 10, opcion: 'cara' })).ok, true);
   const segunda = await emitir(anfitrion, 'lanzar');
   assert.equal(segunda.ok, true, JSON.stringify(segunda));
+  const pagoSegunda = segunda.resultado.lado === 'cara' ? 20 : 0;
+  assert.equal(buscarJugadorPorId(anfitrion.id).saldo, saldoAna - 10 + pagoSegunda);
+  assert.equal(buscarJugadorPorId(invitado.id).saldo, saldoBruno, 'no cambia si no vuelve a apostar');
 
   const total = db.prepare(`SELECT COUNT(*) AS n FROM ${TABLA} WHERE sala_codigo = ?`).get(codigo).n;
   assert.equal(total, 3, 'dos de la primera ronda y una de la segunda');

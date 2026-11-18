@@ -5,10 +5,10 @@
 //   - sirve la interfaz de public/
 //   - expone /health, /api/salas, /api/salas/:codigo y los enlaces /sala/:codigo
 //   - mantiene las salas en memoria y atiende crear_sala / entrar_sala / salir_sala / chat
-//   - lanza los juegos rápidos (Cara o Cruz y Ruleta): el servidor genera un
-//     resultado para toda la sala y liquida las apuestas
-//   - reparte blackjack con un mazo por ronda y ejecuta el turno de cada jugador:
-//     pedir otra carta o plantarse (si supera 21, pierde su apuesta de inmediato)
+//   - lanza los juegos rápidos: el anfitrión manda `lanzar` y el servidor genera el
+//     resultado y paga a toda la sala (Cara o Cruz: ×2 a quien acierta)
+//   - guarda en SQLite el saldo final de cada jugador cuando termina la ronda
+//   - reparte blackjack con un mazo por ronda; solo el dueño recibe su mano y sus puntos
 //   - corre el reloj de turno: si el jugador no responde, el servidor decide por él
 //     (blackjack: se planta · póker: pasa si puede, si no se retira) y la partida sigue
 // El servidor es autoritativo: el navegador solo envía intenciones.
@@ -26,7 +26,7 @@ const jugadores = require('./lib/jugadores.js');
 // Ticket 4: cada ronda terminada se guarda en `historial_rondas`.
 const { registrarRondaTerminada } = require('./lib/historial.js');
 const { crearRelojDeTurnos, tiempoDeTurno } = require('./lib/turno.js');
-const { lanzarRonda, vistaDeApuesta, nuevaSemilla } = require('./lib/lanzamiento.js');
+const { lanzarRonda, nuevaSemilla } = require('./lib/lanzamiento.js');
 const { crearRng } = require('./lib/rng.js');
 const coinflip = require('./lib/juegos/coinflip.js');
 const roulette = require('./lib/juegos/roulette.js');
@@ -115,48 +115,58 @@ function difundirEstado(sala, motivo = 'cambio') {
   io.to(sala.codigo).emit('estado_sala', estadoConMotivo(sala, motivo));
 }
 
-/**
- * Ticket 2: el registro persistente del jugador se crea, se busca por id y se
- * actualiza con lib/jugadores.js. Aquí no hay SQL suelto ni consultas a mano.
- * La validación del nombre y del avatar ya la hizo lib/salas.js al sentarlo.
- */
-function registrarJugadorPersistente(jugadorDeSala) {
-  if (!jugadorDeSala) return null;
-  const { id, nombre, avatar } = jugadorDeSala;
+/** Carga el saldo guardado (o crea el perfil con el saldo inicial) antes de sentarlo. */
+function cargarJugadorPersistente(socket, datos, jugador) {
+  const deviceId = datos?.device_id === undefined ? null : jugadores.validarIdDispositivo(datos.device_id);
+  const vinculado = socket.data.jugadorIdPersistente;
+  const registrado = !vinculado && deviceId
+    ? jugadores.buscarJugadorPorDispositivo(deviceId)
+    : jugadores.buscarJugadorPorId(vinculado || socket.id);
 
-  const registrado = jugadores.buscarJugadorPorId(id);
-  if (!registrado) return jugadores.crearJugador({ id, nombre, avatar });
-  if (registrado.nombre === nombre && registrado.avatar === avatar) return registrado;
-  // Volver a entrar con otro nombre o avatar actualiza el perfil guardado.
-  return jugadores.actualizarJugador(id, { nombre, avatar });
+  if (vinculado && !registrado) throw error('JUGADOR_NO_ENCONTRADO', 'El perfil vinculado ya no existe.');
+  if (vinculado && deviceId && deviceId !== registrado.deviceId) {
+    throw error('PERFIL_DISTINTO', 'Esta conexión ya está vinculada a otro perfil.');
+  }
+  // Un saldo persistente no debe poder gastarse simultáneamente en dos asientos.
+  if (registrado && salas.listar().some((sala) => [...sala.jugadores.values()].some(
+    (otro) => otro.id !== socket.id && otro.idPersistente === registrado.id
+  ))) {
+    throw error('PERFIL_EN_USO', 'Este perfil ya está jugando en otra pestaña.');
+  }
+
+  const { nombre, avatar } = jugador;
+  let perfil = registrado;
+  if (!perfil) {
+    perfil = jugadores.crearJugador({ id: socket.id, nombre, avatar, deviceId });
+  } else if (perfil.nombre !== nombre || perfil.avatar !== avatar) {
+    perfil = jugadores.actualizarJugador(perfil.id, { nombre, avatar });
+  }
+
+  // El asiento y los mensajes privados siguen usando el socket, no el perfil.
+  jugador.idPersistente = perfil.id;
+  jugador.fichas = perfil.saldo;
+  socket.data.jugadorIdPersistente = perfil.id;
+}
+
+function sincronizarSalida(socket, sala, jugador) {
+  socket.leave(sala.codigo);
+  // Una apuesta abandonada ya no puede cobrar ni reembolsarse. Si la mano
+  // sigue abierta, guarda la pérdida antes de que el jugador use otra mesa.
+  // Si su salida cerró la mano, el cierre ya guardó su saldo junto al resto.
+  if (sala.fase === FASES.JUGANDO && sala.apuestas.some(
+    (apuesta) => apuesta.jugadorId === jugador.id && apuesta.abandonada
+  )) {
+    guardarSaldos(sala, [jugador]);
+  }
+  if (sala.estado === ESTADOS_SALA.ABIERTA) difundirEstado(sala);
 }
 
 /** Quita al jugador de su sala y la elimina si queda vacía. */
 function abandonarSala(socket) {
-  const salida = salas.salir(socket.id);
-  const codigo = socket.data.codigoSala || (salida.sala && salida.sala.codigo);
+  const { sala, retirado } = salas.salir(socket.id);
+  if (sala) sincronizarSalida(socket, sala, retirado);
+  else if (socket.data.codigoSala) socket.leave(socket.data.codigoSala);
   socket.data.codigoSala = null;
-  if (codigo) socket.leave(codigo);
-
-  // Si se va (o se desconecta) cuando le tocaba jugar, el servidor decide por él
-  // y la vuelta sigue: la mesa no se queda esperando a quien ya no está.
-  if (salida.sala && salida.sala.turnos) {
-    salida.sala.turnos.retirarJugador(socket.id, 'abandono');
-  }
-
-  if (!salida.sala) return salida;
-
-  if (salida.cerrada) {
-    // El último jugador se fue: la sala desaparece. Se avisa a quien queda
-    // escuchando el canal y al propio jugador que acaba de salir.
-    const aviso = { codigo: salida.sala.codigo, motivo: 'sala_vacia' };
-    io.to(codigo || salida.sala.codigo).emit('sala_cerrada', aviso);
-    socket.emit('sala_cerrada', aviso);
-  } else {
-    difundirEstado(salida.sala, 'salida');
-  }
-
-  return salida;
 }
 
 // ---------------------------------------------------------------------------
@@ -294,12 +304,25 @@ function devolverApuestas(sala) {
   for (const apuesta of sala.apuestas) {
     if (apuesta.resultado !== undefined && apuesta.resultado !== null) continue;
     const jugador = sala.jugadores.get(apuesta.jugadorId);
-    if (!jugador) continue; // quien salió en juego no se reembolsa (DOC-04 §5)
+    if (!jugador || apuesta.abandonada) continue; // quien salió en juego no se reembolsa
     jugador.fichas += apuesta.monto + (Number(sala.puestas[apuesta.jugadorId]) || 0);
   }
   sala.bote = 0;
   sala.apuestaActual = 0;
   sala.puestas = {};
+}
+
+/** Guarda los saldos autoritativos, no los montos ni los pagos por separado. */
+function guardarSaldos(sala, participantes = sala.jugadores.values()) {
+  try {
+    jugadores.actualizarSaldosJugadores(Array.from(participantes, (jugador) => ({
+      id: jugador.idPersistente,
+      saldo: jugador.fichas
+    })));
+  } catch (fallo) {
+    // Igual que con el historial, una falla de SQLite no detiene el reloj ni la mesa.
+    console.warn(`⚠️  Saldo: no se pudo guardar la ronda ${sala.numero_ronda} de la sala ${sala.codigo}: ${fallo.message}`);
+  }
 }
 
 /**
@@ -310,11 +333,9 @@ function devolverApuestas(sala) {
  * partida nunca se interrumpe por el historial: si la base de datos falla, la
  * ronda ya está liquidada en memoria y aquí solo se avisa por consola.
  */
-function registrarHistorial(sala, opciones = {}) {
-  const apuestas = Array.isArray(opciones.apuestas) ? opciones.apuestas : sala.apuestas;
-  const numeroRonda = Number(opciones.numeroRonda) || sala.numero_ronda;
-
-  const liquidables = (apuestas || []).filter(
+function registrarHistorial(sala) {
+  const numeroRonda = sala.numero_ronda;
+  const liquidables = sala.apuestas.filter(
     (apuesta) => apuesta
       && typeof apuesta.resultado === 'string'
       && sala.jugadores.has(apuesta.jugadorId)
@@ -326,14 +347,17 @@ function registrarHistorial(sala, opciones = {}) {
       salaCodigo: sala.codigo,
       juego: sala.juego,
       numeroRonda,
-      jugadores: liquidables.map((apuesta) => ({
-        jugadorId: apuesta.jugadorId,
-        nombre: apuesta.nombre || sala.jugadores.get(apuesta.jugadorId).nombre,
-        apuesta: apuesta.monto,
-        opcion: apuesta.opcion,
-        resultado: apuesta.resultado,
-        pago: apuesta.pago
-      }))
+      jugadores: liquidables.map((apuesta) => {
+        const jugador = sala.jugadores.get(apuesta.jugadorId);
+        return {
+          jugadorId: jugador.idPersistente,
+          nombre: apuesta.nombre || jugador.nombre,
+          apuesta: apuesta.monto,
+          opcion: apuesta.opcion,
+          resultado: apuesta.resultado,
+          pago: apuesta.pago
+        };
+      })
     });
     console.log(`🗂️  Historial: ronda ${numeroRonda} de la sala ${sala.codigo} guardada (${insertadas} fila(s)).`);
   } catch (fallo) {
@@ -341,14 +365,17 @@ function registrarHistorial(sala, opciones = {}) {
   }
 }
 
+function guardarRondaTerminada(sala) {
+  guardarSaldos(sala);
+  registrarHistorial(sala);
+}
+
 /** Todos resolvieron su turno: se cierra la mano y la sala pasa a resultados. */
 function cerrarMano(sala, motivo) {
   if (sala.fase === FASES.JUGANDO) {
     devolverApuestas(sala);
     actualizarFaseSala(sala, FASES.RESULTADOS, { servidor: true });
-    // Blackjack y póker: en cuanto la mano tenga pagos por jugador, la ronda
-    // queda registrada igual que las de los juegos rápidos.
-    registrarHistorial(sala);
+    guardarRondaTerminada(sala);
   }
   io.to(sala.codigo).emit('turno', turnoSinJugador(sala, motivo || 'mano_cerrada'));
   difundirEstado(sala, 'resultado');
@@ -534,6 +561,7 @@ io.on('connection', (socket) => {
   socket.on('crear_sala', (datos, ack) => {
     try {
       const salaPrevia = salas.salaDeJugador(socket.id);
+      const jugadorPrevio = salaPrevia?.jugadores.get(socket.id);
       const sala = salas.crear({
         juego: datos && datos.juego,
         anfitrion: {
@@ -541,15 +569,9 @@ io.on('connection', (socket) => {
           nombre: datos && datos.nombre,
           avatar: datos && datos.avatar
         }
-      });
+      }, { prepararIngreso: (jugador) => cargarJugadorPersistente(socket, datos, jugador) });
 
-      // Ticket 2: el jugador también queda registrado con lib/jugadores.js.
-      registrarJugadorPersistente(sala.jugadores.get(socket.id));
-
-      if (salaPrevia && salaPrevia !== sala) {
-        socket.leave(salaPrevia.codigo);
-        if (salaPrevia.estado === ESTADOS_SALA.ABIERTA) difundirEstado(salaPrevia, 'salida');
-      }
+      if (salaPrevia) sincronizarSalida(socket, salaPrevia, jugadorPrevio);
 
       socket.data.codigoSala = sala.codigo;
       socket.join(sala.codigo);
@@ -565,19 +587,13 @@ io.on('connection', (socket) => {
 
   socket.on('entrar_sala', (datos, ack) => {
     try {
-      const { sala, jugador, yaEstaba, salidaAnterior } = salas.unir(datos && datos.codigo, {
+      const { sala, yaEstaba, salidaAnterior } = salas.unir(datos && datos.codigo, {
         id: socket.id,
         nombre: datos && datos.nombre,
         avatar: datos && datos.avatar
-      });
+      }, { prepararIngreso: (jugador) => cargarJugadorPersistente(socket, datos, jugador) });
 
-      // Ticket 2: al sentarse, el jugador se registra/actualiza con lib/jugadores.js.
-      if (!yaEstaba) registrarJugadorPersistente(jugador);
-
-      if (salidaAnterior && salidaAnterior.sala) {
-        socket.leave(salidaAnterior.sala.codigo);
-        if (!salidaAnterior.cerrada) difundirEstado(salidaAnterior.sala, 'salida');
-      }
+      if (salidaAnterior) sincronizarSalida(socket, salidaAnterior.sala, salidaAnterior.retirado);
 
       socket.data.codigoSala = sala.codigo;
       socket.join(sala.codigo);
@@ -687,9 +703,8 @@ io.on('connection', (socket) => {
       // segundo `lanzar` no vuelve a liquidar (RONDA_LIQUIDADA).
       const ronda = lanzarRonda(sala, motor, { jugadorId: jugador.id });
 
-      // La ronda ya está liquidada: se guarda en `historial_rondas` (historial
-      // y estadísticas) antes de avisar a la sala.
-      registrarHistorial(sala, { numeroRonda: ronda.numeroRonda, apuestas: ronda.apuestas });
+      // Guarda los saldos finales y el historial antes de avisar a la sala.
+      guardarRondaTerminada(sala);
       io.to(sala.codigo).emit('ronda_iniciada', { numeroRonda: ronda.numeroRonda, juego: ronda.juego });
       io.to(sala.codigo).emit('resultado', ronda);
       difundirEstado(sala, 'resultado');

@@ -24,7 +24,7 @@
 | --- | --- | --- | --- |
 | **Navegador** | HTML + CSS + JavaScript que se descarga al abrir la página | Pide la página, abre el WebSocket, muestra la sala y manda la intención del jugador («apuesto 100 al rojo») | No calcula resultados, no reparte cartas, no mueve fichas por su cuenta |
 | **Servidor Node.js** | Un solo proceso: Express + Socket.IO + motor de juego | Guarda el estado real, valida cada acción, genera el resultado con su RNG, liquida pagos y difunde el nuevo estado a todos | No confía en nada que le mande el cliente |
-| **Capa de datos** | Memoria del proceso (+ snapshot JSON opcional) | Guarda salas, jugadores, partidas y apuestas del modelo DOC-03 | No guarda contraseñas, correos ni datos de pago (no existen) |
+| **Capa de datos** | Memoria del proceso y SQLite | Mantiene salas y rondas activas en memoria; guarda perfiles, saldos e historial en SQLite | No guarda contraseñas, correos ni datos de pago (no existen) |
 
 **Regla de oro:** el servidor es **autoritativo**. El cliente envía intenciones y recibe estados;
 el resultado de una ronda se genera una sola vez, en el servidor, y todos los clientes lo reciben.
@@ -37,7 +37,7 @@ el resultado de una ronda se genera una sola vez, en el servidor, y todos los cl
 | --- | --- | --- | --- | --- |
 | 1 | **HTTP** (`GET`) | navegador → servidor | Descargar la aplicación y consultar salas | HTML, CSS, JS, JSON |
 | 2 | **WebSocket** (Socket.IO) | navegador ⇄ servidor | Todo lo que pasa dentro de la sala, en tiempo real | Eventos con JSON |
-| 3 | **Lectura/escritura** | servidor → datos | Guardar y leer salas, jugadores, partidas y apuestas | Objetos en memoria (o SQL/JSON si se activa persistencia) |
+| 3 | **Lectura/escritura** | servidor → datos | Guardar y leer salas, jugadores, partidas y apuestas | Objetos en memoria y consultas SQLite |
 
 ### 3.1 Endpoints HTTP
 
@@ -53,9 +53,9 @@ el resultado de una ronda se genera una sola vez, en el servidor, y todos los cl
 
 | Evento | Quién lo manda | Datos |
 | --- | --- | --- |
-| `crear_sala` | Cualquiera | `{ nombre, avatar, juego }` |
-| `entrar_sala` | Cualquiera | `{ codigo, nombre, avatar }` — el código se acepta en minúsculas, con espacios y hasta 6 jugadores por sala; responde `{ ok: true, codigo }` o `SALA_LLENA` / `SALA_NO_ENCONTRADA` |
-| `salir_sala` | Jugador | — responde `{ ok: true, codigo, salaCerrada }` |
+| `crear_sala` | Cualquiera | `{ nombre, avatar, juego, device_id? }` |
+| `entrar_sala` | Cualquiera | `{ codigo, nombre, avatar, device_id? }` |
+| `salir_sala` | Jugador | — |
 | `comenzar` | **Anfitrión** | — (abre la fase `apuestas`) |
 | `apostar` | Jugador | `{ monto, opcion }` (las opciones dependen del juego, ver abajo) |
 | `lanzar` | **Anfitrión** | — (juegos rápidos: el servidor lanza y liquida; lo que mande el cliente se ignora) |
@@ -86,23 +86,21 @@ Cada evento del cliente se responde con un **acknowledgement**: `{ ok: true }` o
 `{ ok: false, error }`. Si llega `ok: false`, la interfaz muestra el mensaje y no cambia nada.
 Los eventos sin datos se pueden mandar solo con su ack: `socket.emit('lanzar', ack)`.
 
-**Reparto y turno de blackjack.** Solo reciben `cartas` quienes confirmaron una apuesta. En su
-turno cada jugador envía `accion_blackjack` con `'hit'` (`'pedir'`) para recibir otra carta o
-`'stand'` (`'plantarse'`) para cerrar su mano. Si tras pedir queda en 21 o menos, recibe su mano
-actualizada en privado, conserva el turno y se renueva su reloj de 25 s; si supera 21, su apuesta
-queda liquidada de inmediato como derrota (`multiplicador: 0`, `pago: 0`, `resultado: 'pierde'`) y
-el turno pasa al siguiente jugador (o cierra la ronda si era el último). Todos ven `estado_sala.casa`:
-antes del reparto es `null`; durante el juego, por ejemplo, `{ cartas: ['A♥', null], puntos: 11 }`.
-El `null` representa la carta tapada y el puntaje se calcula solo con la visible. En `resultados`
-se muestran las dos cartas de la casa y su total. El mazo, la semilla y las manos de los demás
-jugadores no viajan en el estado público.
+**Saldo del perfil.** El navegador envía el `device_id` aleatorio que conserva en `localStorage`.
+Ese identificador permite recuperar el saldo al volver a entrar y no se incluye en el estado de sala.
+Un perfil nuevo recibe 1.000 fichas; uno existente conserva el saldo guardado. Cada perfil puede
+ocupar un solo asiento a la vez. Si el cliente omite `device_id`, el perfil queda ligado a ese socket.
 
-**Opciones y resultado de un juego rápido.** En Cara o Cruz se apuesta a `cara` o `cruz`; el
-`resultado` es `{ lado: 'cara' }` o `{ lado: 'cruz' }`. En Ruleta se apuesta a `rojo`, `negro`,
-`par`, `impar` o `n:0`…`n:36`; el `resultado` es `{ numero, color }`, con `color: 'verde'` para
-el cero. Cada apuesta liquidada trae su `multiplicador`, el `pago` total (incluye lo apostado),
-el `neto` (lo que ganó o perdió) y `resultado: 'gana' | 'pierde' | 'empate'`. Las mismas apuestas,
-ya liquidadas, van en `estado_sala`; antes de lanzar esos cuatro campos valen `null`.
+**Reparto de blackjack.** Solo reciben `cartas` quienes confirmaron una apuesta. Todos ven
+`estado_sala.casa`: antes del reparto es `null`; durante el juego, por ejemplo,
+`{ cartas: ['A♥', null], puntos: 11 }`. El `null` representa la carta tapada y el puntaje se
+calcula solo con la visible. En `resultados` se muestran las dos cartas de la casa y su total.
+El mazo, la semilla y las manos de los demás jugadores no viajan en el estado público.
+
+**Resultado de un juego rápido.** En Cara o Cruz `resultado` es `{ lado: 'cara' }` o
+`{ lado: 'cruz' }`. Cada apuesta liquidada trae su `multiplicador`, el `pago` total (incluye lo
+apostado), el `neto` (lo que ganó o perdió) y `resultado: 'gana' | 'pierde' | 'empate'`. Las mismas
+apuestas, ya liquidadas, van en `estado_sala`; antes de lanzar esos cuatro campos valen `null`.
 
 | Rechazo de `apostar` / `lanzar` | `error.codigo` |
 | --- | --- |
@@ -130,6 +128,7 @@ Jugador A                Servidor                       Jugador B
    │                         │── genera número 17 (RNG)     │
    │                         │── calcula multiplicadores    │
    │                         │── acredita pagos             │
+   │                         │── guarda saldos en SQLite    │
    │◀──── resultado ─────────│─────── resultado ────────────▶
    │◀──── estado_sala ───────│─────── estado_sala ──────────▶
 ```
@@ -142,6 +141,8 @@ intacta en `apuestas`. Dados usará el mismo camino cuando se registre su motor 
 
 En **blackjack** y **póker** el mismo esquema se repite por turno: el servidor manda `turno`,
 espera la acción (o vence el reloj), aplica la jugada y vuelve a difundir `estado_sala`.
+También guarda los saldos cuando termina la mano, aunque el motor provisional solo devuelva
+lo apostado.
 
 ---
 
@@ -155,11 +156,11 @@ espera la acción (o vence el reloj), aplica la jugada y vuelve a difundir `esta
 | Jugador en turno que sale o se desconecta | El servidor aplica la misma decisión automática (`motivo: 'abandono'`) y la mano continúa |
 | Jugador que no apuesta en la fase `apuestas` | No entra al orden de turnos; la ronda se juega sin él (el servidor nunca apuesta por nadie) |
 | Anfitrión inactivo 60 s | El rol de anfitrión migra al siguiente jugador conectado |
-| Desconexión breve | Socket.IO reintenta solo; el jugador conserva asiento y saldo |
-| Salida voluntaria | Se libera el asiento; si la ronda no se lanzó, se reembolsa la apuesta |
+| Desconexión breve | Socket.IO reintenta la conexión. Al volver a entrar con el mismo `device_id`, se recupera el saldo guardado, no necesariamente el asiento anterior |
+| Salida voluntaria | Se libera el asiento. Antes de que la ronda arranque, la apuesta se reembolsa; al abandonar durante el juego, se guarda la pérdida |
 | Sala vacía | Se elimina la sala y se cancelan sus temporizadores (relojes de turno incluidos) |
 | Acción inválida | Se responde `ok:false` con mensaje; el estado no cambia |
-| Apagado del servidor | Se cancelan los relojes de turno; si el snapshot está activo, guarda `data/estado.json` y lo recupera al arrancar |
+| Apagado del servidor | Se cancelan los relojes de turno. Los saldos ya guardados se recuperan si se conserva el archivo de SQLite |
 
 Los límites de turno viven en `lib/reglas.js` (DOC-02 §2) y el reloj en `lib/turno.js`; se pueden
 acortar con `TIEMPO_TURNO_BLACKJACK_MS` y `TIEMPO_TURNO_POKER_MS` para probar la mesa.

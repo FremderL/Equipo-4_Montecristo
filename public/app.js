@@ -13,6 +13,7 @@ const ETIQUETAS_AVATAR = {
 
 const CLAVE_PERFIL = 'montecristo.perfil';
 const FORMATO_CODIGO_SALA = /^[A-Z0-9]{5}$/;
+const FORMATO_FICHAS = new Intl.NumberFormat('es-MX');
 
 let socket = null;
 let accionPerfil = 'crear';
@@ -455,23 +456,13 @@ function enviarSolicitudPerfil(campoNombre, campoJuego) {
   }
 
   const evento = accionPerfil === 'crear' ? 'crear_sala' : 'entrar_sala';
-  let datosEvento;
+  const datosEvento = {
+    nombre: datosJugador.nombre,
+    avatar: datosJugador.avatar,
+    device_id: datosJugador.device_id,
+    ...(accionPerfil === 'crear' ? { juego: campoJuego.value } : { codigo: codigoDestino })
+  };
 
-  if (accionPerfil === 'crear') {
-    datosEvento = {
-      nombre: datosJugador.nombre,
-      avatar: datosJugador.avatar,
-      juego: campoJuego.value
-    };
-  } else {
-    datosEvento = {
-      codigo: codigoDestino,
-      nombre: datosJugador.nombre,
-      avatar: datosJugador.avatar
-    };
-  }
-
-  // device_id permanece guardado en localStorage; docs/04 no lo incluye en estos payloads.
   establecerEnviando(true);
   solicitudPendiente = true;
   temporizadorSolicitud = window.setTimeout(() => {
@@ -622,10 +613,10 @@ function mostrarJugadoresDeSala({ jugadores, capacidad }) {
   if (!lista) return;
 
   buscarPorId('ocupacion-sala').textContent = `${jugadores.length} de ${capacidad} jugadores`;
-  lista.replaceChildren(...jugadores.map(({ nombre, avatar, esAnfitrion }) => {
+  lista.replaceChildren(...jugadores.map(({ nombre, avatar, esAnfitrion, fichas }) => {
     const item = document.createElement('li');
     item.className = 'badge';
-    item.textContent = `${avatar} ${nombre}${esAnfitrion ? ' (anfitrión)' : ''}`;
+    item.textContent = `${avatar} ${nombre}${esAnfitrion ? ' (anfitrión)' : ''} · ${FORMATO_FICHAS.format(fichas)} fichas`;
     return item;
   }));
 }

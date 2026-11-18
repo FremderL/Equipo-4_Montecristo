@@ -23,10 +23,12 @@ const {
   AVATAR_POR_DEFECTO,
   crearJugador,
   buscarJugadorPorId,
+  buscarJugadorPorDispositivo,
   actualizarJugador,
   actualizarNombreJugador,
   actualizarAvatarJugador,
   actualizarSaldoJugador,
+  actualizarSaldosJugadores,
   ajustarSaldoJugador,
   configurarDb
 } = require('../lib/jugadores.js');
@@ -86,7 +88,7 @@ test('crearJugador rechaza nombre vacío, nombre repetido en id y saldo inválid
 });
 
 // ---------------------------------------------------------------------------
-// buscarJugadorPorId
+// Buscar por id de jugador o dispositivo
 // ---------------------------------------------------------------------------
 
 test('buscarJugadorPorId devuelve el jugador guardado o null si no existe', () => {
@@ -101,6 +103,14 @@ test('buscarJugadorPorId devuelve el jugador guardado o null si no existe', () =
   assert.equal(buscarJugadorPorId(''), null);
   assert.equal(buscarJugadorPorId(undefined), null);
   assert.equal(buscarJugadorPorId(null), null);
+});
+
+test('recupera el perfil por su deviceId y valida el identificador', () => {
+  limpiar();
+  const jugador = crearJugador({ nombre: 'Luz', deviceId: 'd_luz' });
+  assert.deepEqual(buscarJugadorPorDispositivo('d_luz'), jugador);
+  assert.equal(buscarJugadorPorDispositivo('d_otro'), null);
+  assert.throws(() => buscarJugadorPorDispositivo('x'.repeat(65)), { codigo: 'DISPOSITIVO_INVALIDO' });
 });
 
 // ---------------------------------------------------------------------------
@@ -144,8 +154,25 @@ test('actualizarJugador valida los datos y avisa si el jugador no existe', () =>
 });
 
 // ---------------------------------------------------------------------------
-// ajustarSaldoJugador (suma y resta atómica de fichas)
+// Operaciones atómicas de saldo
 // ---------------------------------------------------------------------------
+
+test('actualizarSaldosJugadores guarda todos los saldos de la ronda o ninguno', () => {
+  limpiar();
+  crearJugador({ id: 'j_ana', nombre: 'Ana' });
+  crearJugador({ id: 'j_bruno', nombre: 'Bruno' });
+  const saldos = [{ id: 'j_ana', saldo: 2000 }, { id: 'j_bruno', saldo: 0 }];
+  assert.throws(
+    () => actualizarSaldosJugadores([...saldos, { id: 'no_existe', saldo: 1000 }]),
+    { codigo: 'JUGADOR_NO_ENCONTRADO' }
+  );
+  assert.equal(buscarJugadorPorId('j_ana').saldo, 1000);
+  assert.equal(buscarJugadorPorId('j_bruno').saldo, 1000);
+
+  actualizarSaldosJugadores(saldos);
+  assert.equal(buscarJugadorPorId('j_ana').saldo, 2000);
+  assert.equal(buscarJugadorPorId('j_bruno').saldo, 0);
+});
 
 test('ajustarSaldoJugador suma y resta sin dejar el saldo en negativo', () => {
   limpiar();
