@@ -86,28 +86,23 @@ Cada evento del cliente se responde con un **acknowledgement**: `{ ok: true }` o
 `{ ok: false, error }`. Si llega `ok: false`, la interfaz muestra el mensaje y no cambia nada.
 Los eventos sin datos se pueden mandar solo con su ack: `socket.emit('lanzar', ack)`.
 
-**Estado en tiempo real.** `estado_sala` es la única fuente de verdad para el navegador: sale del
-servidor con `difundirEstado(sala, motivo)` hacia **todos** los sockets de la sala
-(`io.to(sala.codigo)`) cada vez que alguien entra, sale o apuesta, y también en cada cambio de fase,
-turno y resultado. El estado nunca se difunde desde una sala ya cerrada y jamás incluye la semilla,
-el mazo ni las manos privadas.
+**Reparto y turno de blackjack.** Solo reciben `cartas` quienes confirmaron una apuesta. En su
+turno cada jugador envía `accion_blackjack` con `'hit'` (`'pedir'`) para recibir otra carta o
+`'stand'` (`'plantarse'`) para cerrar su mano. Si tras pedir queda en 21 o menos, recibe su mano
+actualizada en privado, conserva el turno y se renueva su reloj de 25 s; si supera 21, su apuesta
+queda liquidada de inmediato como derrota (`multiplicador: 0`, `pago: 0`, `resultado: 'pierde'`) y
+el turno pasa al siguiente jugador (o cierra la ronda si era el último). Todos ven `estado_sala.casa`:
+antes del reparto es `null`; durante el juego, por ejemplo, `{ cartas: ['A♥', null], puntos: 11 }`.
+El `null` representa la carta tapada y el puntaje se calcula solo con la visible. En `resultados`
+se muestran las dos cartas de la casa y su total. El mazo, la semilla y las manos de los demás
+jugadores no viajan en el estado público.
 
-**Entrar y salir de una sala.** `new Map()` de salas en memoria con clave por código de 5
-caracteres, capacidad de **6 asientos** numerados 1–6 (`REGLAS.JUGADORES_POR_SALA`): el séptimo
-recibe `SALA_LLENA`. Al salir se libera el asiento, se reembolsa la apuesta pendiente si la ronda no
-se había lanzado, el rol de anfitrión pasa al siguiente jugador y, si no queda nadie, la sala se
-elimina y se emite `sala_cerrada`.
-
-**Reparto de blackjack.** Solo reciben `cartas` quienes confirmaron una apuesta. Todos ven
-`estado_sala.casa`: antes del reparto es `null`; durante el juego, por ejemplo,
-`{ cartas: ['A♥', null], puntos: 11 }`. El `null` representa la carta tapada y el puntaje se
-calcula solo con la visible. En `resultados` se muestran las dos cartas de la casa y su total.
-El mazo, la semilla y las manos de los demás jugadores no viajan en el estado público.
-
-**Resultado de un juego rápido.** En Cara o Cruz `resultado` es `{ lado: 'cara' }` o
-`{ lado: 'cruz' }`. Cada apuesta liquidada trae su `multiplicador`, el `pago` total (incluye lo
-apostado), el `neto` (lo que ganó o perdió) y `resultado: 'gana' | 'pierde' | 'empate'`. Las mismas
-apuestas, ya liquidadas, van en `estado_sala`; antes de lanzar esos cuatro campos valen `null`.
+**Opciones y resultado de un juego rápido.** En Cara o Cruz se apuesta a `cara` o `cruz`; el
+`resultado` es `{ lado: 'cara' }` o `{ lado: 'cruz' }`. En Ruleta se apuesta a `rojo`, `negro`,
+`par`, `impar` o `n:0`…`n:36`; el `resultado` es `{ numero, color }`, con `color: 'verde'` para
+el cero. Cada apuesta liquidada trae su `multiplicador`, el `pago` total (incluye lo apostado),
+el `neto` (lo que ganó o perdió) y `resultado: 'gana' | 'pierde' | 'empate'`. Las mismas apuestas,
+ya liquidadas, van en `estado_sala`; antes de lanzar esos cuatro campos valen `null`.
 
 | Rechazo de `apostar` / `lanzar` | `error.codigo` |
 | --- | --- |
