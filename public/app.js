@@ -61,6 +61,10 @@ function cargarSocketIO() {
       socket.on('connect', () => {
         actualizarEstadoConexion('conectado', 'Conectado al servidor');
       });
+      socket.on('bienvenida', (datos) => {
+        const mensaje = datos && typeof datos.mensaje === 'string' ? datos.mensaje : String(datos || '');
+        console.log(`[MonteCristo] ${mensaje}`, datos);
+      });
       socket.on('disconnect', () => {
         const salaLista = buscarPorId('sala-lista');
         if (salaLista && !salaLista.hidden) {

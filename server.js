@@ -31,6 +31,7 @@ const PUERTO_POR_DEFECTO = 3000;
 const PUERTO = Number(process.env.PORT) || PUERTO_POR_DEFECTO;
 const HOST = process.env.HOST || '0.0.0.0';
 const RUTA_PUBLIC = path.join(__dirname, 'public');
+const MENSAJE_BIENVENIDA = '¡Bienvenido a MonteCristo! Conexión en tiempo real lista (fichas 100 % virtuales).';
 const MAX_SALAS = Number(process.env.MAX_SALAS) > 0 ? Number(process.env.MAX_SALAS) : 50;
 const JUEGOS = ['coinflip', 'dice', 'roulette', 'blackjack', 'poker'];
 
@@ -509,6 +510,14 @@ function atender(socket, ack, funcion) {
 io.on('connection', (socket) => {
   socket.data.codigoSala = null;
 
+  const bienvenida = {
+    mensaje: MENSAJE_BIENVENIDA,
+    socketId: socket.id,
+    fecha: new Date().toISOString()
+  };
+  console.log(`[Socket.IO] Navegador conectado (${socket.id}): ${bienvenida.mensaje}`);
+  socket.emit('bienvenida', bienvenida);
+
   // DOC-04 §3.2: `comenzar`, `lanzar`, `repartir`, `nueva_ronda` y `salir_sala` no
   // llevan datos. Si el cliente los manda solo con su ack (`socket.emit('lanzar', ack)`),
   // el paquete se acomoda como (datos = null, ack): así todo evento responde su ack.
@@ -793,4 +802,4 @@ if (require.main === module) {
   process.on('SIGTERM', () => apagar('SIGTERM'));
 }
 
-module.exports = { app, servidor, io, PUERTO, PUERTO_POR_DEFECTO, RUTA_PUBLIC };
+module.exports = { app, servidor, io, PUERTO, PUERTO_POR_DEFECTO, RUTA_PUBLIC, MENSAJE_BIENVENIDA };
