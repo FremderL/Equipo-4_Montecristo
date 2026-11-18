@@ -33,12 +33,12 @@ $ node evidencias/scripts/ticket-1-cliente.js
 
 Conectando dos navegadores a http://localhost:3000 …
 
-[Navegador 1] socket cyK89lRiXvxpe-83AAAA
+[Navegador 1] socket jpRkbChrWN6yZFuWAAAA
 [Navegador 1] consola del navegador → [MonteCristo] ¡Bienvenido a MonteCristo! Conexión en tiempo real lista (fichas 100 % virtuales).
-[Navegador 1] datos recibidos: {"mensaje":"¡Bienvenido a MonteCristo! Conexión en tiempo real lista (fichas 100 % virtuales).","socketId":"cyK89lRiXvxpe-83AAAA","fecha":"2026-11-18T22:18:06.027Z"}
-[Navegador 2] socket QlfGhYFNQKECXSR0AAAB
+[Navegador 1] datos recibidos: {"mensaje":"¡Bienvenido a MonteCristo! Conexión en tiempo real lista (fichas 100 % virtuales).","socketId":"jpRkbChrWN6yZFuWAAAA","fecha":"2026-11-18T22:21:56.062Z"}
+[Navegador 2] socket jpRkbChrWN6yZFuWAAAB
 [Navegador 2] consola del navegador → [MonteCristo] ¡Bienvenido a MonteCristo! Conexión en tiempo real lista (fichas 100 % virtuales).
-[Navegador 2] datos recibidos: {"mensaje":"¡Bienvenido a MonteCristo! Conexión en tiempo real lista (fichas 100 % virtuales).","socketId":"QlfGhYFNQKECXSR0AAAB","fecha":"2026-11-18T22:18:06.031Z"}
+[Navegador 2] datos recibidos: {"mensaje":"¡Bienvenido a MonteCristo! Conexión en tiempo real lista (fichas 100 % virtuales).","socketId":"jpRkbChrWN6yZFuWAAAB","fecha":"2026-11-18T22:21:56.063Z"}
 
 ✅ Los dos recibieron la bienvenida (¡Bienvenido a MonteCristo! Conexión en tiempo real lista (fichas 100 % virtuales).)
 ```
@@ -48,8 +48,8 @@ Conectando dos navegadores a http://localhost:3000 …
 ```
 MonteCristo escuchando en http://localhost:3000
 Fichas 100 % virtuales; no hay dinero real.
-[Socket.IO] Navegador conectado (cyK89lRiXvxpe-83AAAA): ¡Bienvenido a MonteCristo! Conexión en tiempo real lista (fichas 100 % virtuales).
-[Socket.IO] Navegador conectado (QlfGhYFNQKECXSR0AAAB): ¡Bienvenido a MonteCristo! Conexión en tiempo real lista (fichas 100 % virtuales).
+[Socket.IO] Navegador conectado (jpRkbChrWN6yZFuWAAAA): ¡Bienvenido a MonteCristo! Conexión en tiempo real lista (fichas 100 % virtuales).
+[Socket.IO] Navegador conectado (jpRkbChrWN6yZFuWAAAB): ¡Bienvenido a MonteCristo! Conexión en tiempo real lista (fichas 100 % virtuales).
 ```
 
 ## Evidencia 4 · pruebas automáticas

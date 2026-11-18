@@ -15,39 +15,45 @@ Para el historial y las estadísticas se añadieron lecturas sin SQL suelto:
 empatadas, apostado, cobrado, neto y desglose por juego).
 
 - Código: `db/schema.sql`, `lib/historial.js`, `server.js` (`registrarHistorial`).
-- Pruebas: `tests/historial.test.js` (11) + `tests/historial-servidor.test.js` (2 de punta a punta).
+- Pruebas: `tests/historial.test.js` + `tests/historial-servidor.test.js` (2 de punta a punta).
 
 ## Evidencia 1 · una ronda real contra el servidor deja la fila en la tabla
 
 ```
 $ node evidencias/scripts/ticket-4-ronda.js
 
-Sala creada: 5R5ML
-  invitado entra → {"ok":true,"codigo":"5R5ML"}
+Sala creada: 3YAX6
+  invitado entra → {"ok":true,"codigo":"3YAX6"}
   comenzar      → {"ok":true,"fase":"apuestas","numeroRonda":1}
   Ana apuesta 100 a cara → {"ok":true,"saldo":900,"monto":100,"opcion":"cara"}
   Bruno apuesta 50 a cruz → {"ok":true,"saldo":950,"monto":50,"opcion":"cruz"}
-  lanzar        → ronda 1, la moneda salió cruz
+  lanzar        → ronda 1, la moneda salió cara
 
-✅ Base de datos conectada: /home/user/Equipo-4_Montecristo/data/casino.db
-historial_rondas · filas de la sala 5R5ML:
+✅ Base de datos conectada: data/casino.db
+historial_rondas · filas de la sala 3YAX6:
 ┌─────────┬─────────────┬────────────┬──────────────┬────────────────────────┬────────────────┬─────────┬────────┬───────────┬──────┬───────────────────────┐
 │ (index) │ sala_codigo │ juego      │ numero_ronda │ jugador_id             │ jugador_nombre │ apuesta │ opcion │ resultado │ pago │ fecha                 │
 ├─────────┼─────────────┼────────────┼──────────────┼────────────────────────┼────────────────┼─────────┼────────┼───────────┼──────┼───────────────────────┤
-│ 0       │ '5R5ML'     │ 'coinflip' │ 1            │ 'Dk_RwOyJt4DwnmHPAAAD' │ 'Bruno'        │ 50      │ 'cruz' │ 'gana'    │ 100  │ '2026-11-18 22:18:20' │
-│ 1       │ '5R5ML'     │ 'coinflip' │ 1            │ 'wfkczvlQFAx8dPO6AAAC' │ 'Ana'          │ 100     │ 'cara' │ 'pierde'  │ 0    │ '2026-11-18 22:18:20' │
+│ 0       │ '3YAX6'     │ 'coinflip' │ 1            │ 'bbJ8D_58-YA1n4pXAAAF' │ 'Bruno'        │ 50      │ 'cruz' │ 'pierde'  │ 0    │ '2026-11-18 22:21:58' │
+│ 1       │ '3YAX6'     │ 'coinflip' │ 1            │ 'tfJcRZVfWMSVX_GbAAAE' │ 'Ana'          │ 100     │ 'cara' │ 'gana'    │ 200  │ '2026-11-18 22:21:58' │
 └─────────┴─────────────┴────────────┴──────────────┴────────────────────────┴────────────────┴─────────┴────────┴───────────┴──────┴───────────────────────┘
-historialDeJugador("Dk_RwOyJt4DwnmHPAAAD") → 1 ronda(s)
+historialDeJugador("bbJ8D_58-YA1n4pXAAAF") → 1 ronda(s)
 estadisticasDeJugador → {
   "rondas": 1,
   "apostado": 50,
-  "cobrado": 100,
-  "ganadas": 1,
-  "perdidas": 0,
+  "cobrado": 0,
+  "ganadas": 0,
+  "perdidas": 1,
   "empatadas": 0,
-  "neto": 50,
+  "neto": -50,
   "porJuego": [
-    { "juego": "coinflip", "rondas": 1, "apostado": 50, "cobrado": 100, "neto": 50 }
+    {
+      "juego": "coinflip",
+      "rondas": 1,
+      "apostado": 50,
+      "cobrado": 0,
+      "neto": -50
+    }
   ]
 }
 ```
@@ -55,10 +61,10 @@ estadisticasDeJugador → {
 ## Evidencia 2 · la consola del servidor confirma la inserción
 
 ```
-[Socket.IO] Navegador conectado (wfkczvlQFAx8dPO6AAAC): ¡Bienvenido a MonteCristo! …
-[Socket.IO] Navegador conectado (Dk_RwOyJt4DwnmHPAAAD): ¡Bienvenido a MonteCristo! …
+[Socket.IO] Navegador conectado (tfJcRZVfWMSVX_GbAAAE): ¡Bienvenido a MonteCristo! …
+[Socket.IO] Navegador conectado (bbJ8D_58-YA1n4pXAAAF): ¡Bienvenido a MonteCristo! …
 ✅ Base de datos conectada: /home/user/Equipo-4_Montecristo/data/casino.db
-🗂️  Historial: ronda 1 de la sala 5R5ML guardada (2 fila(s)).
+🗂️  Historial: ronda 1 de la sala 3YAX6 guardada (2 fila(s)).
 ```
 
 ## Evidencia 3 · pruebas automáticas
