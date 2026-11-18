@@ -134,10 +134,14 @@ Entra a **http://localhost:3000** en tu navegador.
 
 ### 5. Crea tu primera sala
 
-1. Escribe tu nombre y elige un avatar.
-2. Pulsa **Crear sala** y elige el juego.
-3. Copia el enlace o el código de 5 caracteres y compártelo.
-4. Pulsa **Lanzar** (o **Repartir**) cuando todas las apuestas estén listas.
+1. Pulsa **Crear sala**, escribe tu nombre, elige tu avatar y selecciona un juego.
+2. En **Sala lista**, pulsa **Copiar código** y compártelo con tus amigos. El servidor genera un
+   código de 5 letras o números y comprueba que no se repita entre salas activas.
+3. Tus amigos pueden escribirlo en **Entrar con código** desde el inicio o abrir el **Enlace de
+   invitación**. Tras completar su perfil, aparecerán en la lista de la misma sala.
+
+Mantén abierta la pestaña de la sala para conservar tu asiento. El código deja de funcionar cuando
+la sala queda vacía. Por ahora, las rondas de Cara o Cruz se pueden probar desde la consola (paso 7).
 
 ### 6. Comprueba el reloj de turno
 
@@ -175,6 +179,7 @@ y `estado_sala` en fase `resultados`. Con 100 fichas a `cara` el saldo queda en 
 cara y en **900** si sale cruz. Un segundo `lanzar` se rechaza con `RONDA_LIQUIDADA` (la ronda se
 paga una sola vez) y solo el anfitrión puede lanzar. Para probar con más gente, abre otra pestaña
 y entra con `mesa.emit('entrar_sala', { codigo: 'K7Q2M', nombre: 'Bruno', avatar: '🐼' }, console.log)`.
+Sustituye `K7Q2M` por el código que devolvió `crear_sala`.
 
 ### Modo desarrollo
 
@@ -249,7 +254,7 @@ Render asigna `PORT` automáticamente. El blueprint define `NODE_ENV=production`
 | --- | --- |
 | `npm start` | Inicia el servidor en el puerto 3000 (o el de `PORT`) |
 | `npm run dev` | Igual que `npm start`, pensado para desarrollo |
-| `npm test` | Ejecuta las pruebas de reglas, pagos y validaciones |
+| `npm test` | Ejecuta las pruebas de reglas, pagos, validaciones e ingreso a salas |
 | `npm run db:migrar` | Aplica `db/schema.sql` sobre SQLite (idempotente; lo usa Render al arrancar) |
 | `npm run lint` | Revisa el estilo del código con ESLint |
 
@@ -301,6 +306,7 @@ montecristo/
 │  └─ app.js
 ├─ lib/
 │  ├─ reglas.js           # constantes y tabla de pagos (DOC-02)
+│  ├─ codigo-sala.js      # generación y validación de códigos de sala
 │  ├─ rng.js              # generador aleatorio con semilla
 │  ├─ turno.js            # reloj de turno: decide por quien no responde
 │  ├─ lanzamiento.js      # juegos rápidos: lanzar, liquidar y pasar a resultados

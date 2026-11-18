@@ -44,7 +44,7 @@ el resultado de una ronda se genera una sola vez, en el servidor, y todos los cl
 | Método | Ruta | Respuesta |
 | --- | --- | --- |
 | `GET` | `/` | Página principal (`index.html`) |
-| `GET` | `/sala/:codigo` | Misma página, abre la sala indicada |
+| `GET` | `/sala/:codigo` | Enlace de invitación: abre el perfil con el código listo para entrar |
 | `GET` | `/api/salas` | Lista de salas activas con juego, fase y ocupación |
 | `GET` | `/api/salas/:codigo` | Existe o no la sala y cuántos asientos libres tiene |
 | `GET` | `/health` | `{ "ok": true }` para verificar que el servidor vive |
