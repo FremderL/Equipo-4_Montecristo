@@ -5,8 +5,8 @@
 //   - sirve la interfaz de public/
 //   - expone /health, /api/salas y /api/salas/:codigo
 //   - mantiene las salas en memoria y atiende crear_sala / entrar_sala / salir_sala / chat
-//   - lanza los juegos rápidos: el anfitrión manda `lanzar` y el servidor genera el
-//     resultado y paga a toda la sala (Cara o Cruz: ×2 a quien acierta)
+//   - lanza los juegos rápidos (Cara o Cruz y Ruleta): el servidor genera un
+//     resultado para toda la sala y liquida las apuestas
 //   - corre el reloj de turno: si el jugador no responde, el servidor decide por él
 //     (blackjack: se planta · póker: pasa si puede, si no se retira) y la partida sigue
 // El servidor es autoritativo: el navegador solo envía intenciones.
@@ -22,6 +22,7 @@ const { validarApuesta } = require('./lib/fichas.js');
 const { crearRelojDeTurnos, tiempoDeTurno } = require('./lib/turno.js');
 const { lanzarRonda, vistaDeApuesta } = require('./lib/lanzamiento.js');
 const coinflip = require('./lib/juegos/coinflip.js');
+const roulette = require('./lib/juegos/roulette.js');
 
 const PUERTO = Number(process.env.PORT) || 3000;
 const HOST = process.env.HOST || '0.0.0.0';
@@ -29,12 +30,11 @@ const MAX_SALAS = Number(process.env.MAX_SALAS) > 0 ? Number(process.env.MAX_SAL
 const JUEGOS = ['coinflip', 'dice', 'roulette', 'blackjack', 'poker'];
 const ALFABETO_CODIGO = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
 
-/**
- * Juegos rápidos con motor listo (lib/juegos/*.js): un solo lanzamiento y
- * liquidación inmediata para toda la sala. Dados y ruleta se registran aquí
- * cuando llegue su ticket; el evento `lanzar` no cambia.
- */
-const MOTORES_RAPIDOS = new Map([[coinflip.JUEGO, coinflip]]);
+/** Juegos rápidos con motor listo: un lanzamiento y una liquidación para toda la sala. */
+const MOTORES_RAPIDOS = new Map([
+  [coinflip.JUEGO, coinflip],
+  [roulette.JUEGO, roulette]
+]);
 
 function enteroPositivo(valor, predeterminado) {
   const numero = Number(valor);
@@ -602,21 +602,24 @@ io.on('connection', (socket) => {
       }
 
       const monto = Number(datos && datos.monto);
-      const opcion = typeof (datos && datos.opcion) === 'string' ? datos.opcion.trim().toLowerCase() : '';
+      const opcionSolicitada = datos && datos.opcion;
       const yaAposto = sala.apuestas.some((apuesta) => apuesta.jugadorId === jugador.id);
       if (yaAposto) throw error('APUESTA_REPETIDA', 'Ya confirmaste tu apuesta en esta ronda.');
 
       const validacion = validarApuesta(jugador.fichas, monto, false);
       if (!validacion.ok) throw error('APUESTA_INVALIDA', validacion.error);
 
-      // DOC-02 §10.6: la opción tiene que existir en el juego (`cara` o `cruz` en
-      // Cara o Cruz). Los juegos que aún no tienen motor conservan la revisión mínima.
+      // DOC-02 §10.6: el motor valida y normaliza la opción antes de descontar fichas.
+      // Los juegos sin motor conservan la revisión mínima.
       const motor = MOTORES_RAPIDOS.get(sala.juego);
+      let opcion;
       if (motor) {
-        const revision = motor.validarOpcion(opcion);
+        const revision = motor.validarOpcion(opcionSolicitada);
         if (!revision.ok) throw error('OPCION_INVALIDA', revision.error);
-      } else if (!opcion) {
-        throw error('APUESTA_INVALIDA', 'Elige una opción para tu apuesta.');
+        opcion = revision.opcion;
+      } else {
+        opcion = typeof opcionSolicitada === 'string' ? opcionSolicitada.trim().toLowerCase() : '';
+        if (!opcion) throw error('APUESTA_INVALIDA', 'Elige una opción para tu apuesta.');
       }
 
       jugador.fichas -= monto;
