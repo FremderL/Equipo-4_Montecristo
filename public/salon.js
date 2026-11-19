@@ -6,6 +6,7 @@ function iniciarDirectorio() {
   const boton = document.getElementById('actualizar-salas');
   const aviso = document.getElementById('aviso-directorio');
   let cargando = false;
+  let suscrito = false;
 
   function mensaje(titulo, detalle) {
     tabla.hidden = true;
@@ -53,16 +54,21 @@ function iniciarDirectorio() {
     }
   }
 
+  function aplicarSalas(salas) {
+    actualizarFilas(salas.filter((sala) => sala.jugadores < sala.capacidad));
+  }
+
   async function consultar() {
     if (cargando) return;
     cargando = true;
     boton.setAttribute('aria-busy', 'true');
     try {
-      const respuesta = await fetch('/api/salas', { cache: 'no-store', signal: AbortSignal.timeout(8000) });
+      // no-cache = revalidar con ETag: si el directorio no cambió llega un 304 sin cuerpo.
+      const respuesta = await fetch('/api/salas', { cache: 'no-cache', signal: AbortSignal.timeout(8000) });
       if (!respuesta.ok) throw new Error();
       const datos = await respuesta.json();
       if (!datos.ok || !Array.isArray(datos.salas)) throw new Error();
-      actualizarFilas(datos.salas.filter((sala) => sala.jugadores < sala.capacidad));
+      aplicarSalas(datos.salas);
     } catch {
       total.hidden = true;
       mensaje('No se pudo cargar el directorio', 'Comprueba la conexión y pulsa Actualizar para volver a intentarlo.');
@@ -72,9 +78,23 @@ function iniciarDirectorio() {
     }
   }
 
+  // Con WebSocket abierto el servidor avisa cuando entra o sale alguien: se acabó
+  // pedir la lista cada 5 segundos. El sondeo queda solo como respaldo sin socket.
+  function suscribirAlSocket() {
+    if (suscrito || !socket || !socket.connected) return;
+    suscrito = true;
+    socket.on('salas_actualizadas', (datos) => {
+      if (datos && Array.isArray(datos.salas)) aplicarSalas(datos.salas);
+    });
+    consultar(); // por si cambió algo mientras no había conexión
+  }
+
   boton.addEventListener('click', consultar);
-  const consultarSiVisible = () => { if (!document.hidden) consultar(); };
-  document.addEventListener('visibilitychange', consultarSiVisible);
-  window.setInterval(consultarSiVisible, 5000);
+  window.addEventListener('montecristo:socket-listo', suscribirAlSocket);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) consultar(); });
+  window.setInterval(() => {
+    if (!document.hidden && (!socket || !socket.connected)) consultar();
+  }, 30000);
+  suscribirAlSocket();
   consultar();
 }

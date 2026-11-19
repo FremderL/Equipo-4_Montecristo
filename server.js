@@ -17,6 +17,7 @@
 const path = require('node:path');
 const http = require('node:http');
 const express = require('express');
+const compression = require('compression');
 const { Server } = require('socket.io');
 const { REGLAS } = require('./lib/reglas.js');
 const { FASES, fasePermiteAccion, esAnfitrion } = require('./lib/ronda.js');
@@ -136,6 +137,15 @@ function avisarRonda(sala, evento, datos) {
   io.to(sala.codigo).emit(evento, { ...datos, codigo: sala.codigo, numeroRonda: sala.numero_ronda });
 }
 
+/**
+ * Directorio en tiempo real: se empuja solo cuando cambia el número de jugadores
+ * o de salas. Antes el navegador pedía /api/salas cada 5 s aunque no hubiera
+ * movimiento; ahora ese tráfico desaparece mientras haya WebSocket activo.
+ */
+function difundirDirectorio() {
+  io.emit('salas_actualizadas', { salas: salas.listar().map(resumenDeSala) });
+}
+
 /** Carga el saldo guardado (o crea el perfil con el saldo inicial) antes de sentarlo. */
 function cargarJugadorPersistente(socket, datos, jugador) {
   const deviceId = datos?.device_id === undefined ? null : jugadores.validarIdDispositivo(datos.device_id);
@@ -193,6 +203,7 @@ function abandonarSala(socket) {
   if (salida.sala) sincronizarSalida(socket, salida.sala, salida.retirado);
   else if (socket.data.codigoSala) socket.leave(socket.data.codigoSala);
   socket.data.codigoSala = null;
+  if (salida.sala) difundirDirectorio();
   return salida;
 }
 
@@ -552,7 +563,29 @@ const servidor = http.createServer(app);
 const io = new Server(servidor);
 
 app.disable('x-powered-by');
-app.use(express.static(RUTA_PUBLIC));
+
+// HTML, CSS, JavaScript, JSON y SVG viajan comprimidos. Las imágenes ya lo están
+// (JPEG) y no se recomprimen: con esto una carga inicial pesa la cuarta parte.
+app.use(compression({ threshold: 1024 }));
+
+// El HTML se revalida en cada visita para publicar cambios enseguida; el resto
+// se guarda una hora en el navegador. express.static ya añade ETag/Last-Modified.
+app.use(express.static(RUTA_PUBLIC, {
+  setHeaders(res, filePath) {
+    if (path.extname(filePath).toLowerCase() === '.html') {
+      res.setHeader('Cache-Control', 'no-cache');
+    } else {
+      res.setHeader('Cache-Control', 'public, max-age=3600, stale-while-revalidate=86400');
+    }
+  }
+}));
+
+// Las respuestas de la API se revalidan con ETag: cuando no cambian, el servidor
+// devuelve 304 sin cuerpo (el directorio se consulta al entrar y al reconectar).
+app.use('/api', (req, res, next) => {
+  res.setHeader('Cache-Control', 'no-cache');
+  next();
+});
 
 app.get('/health', (req, res) => {
   res.json({ ok: true });
@@ -650,6 +683,7 @@ io.on('connection', (socket) => {
       socket.join(sala.codigo);
 
       socket.emit('estado_sala', estadoConMotivo(sala, 'creada'));
+      difundirDirectorio();
       if (typeof ack === 'function') ack({ ok: true, codigo: sala.codigo });
     } catch (fallo) {
       if (typeof ack === 'function') {
@@ -677,6 +711,7 @@ io.on('connection', (socket) => {
       } else {
         // Ticket 2: todos los de la mesa (incluido quien acaba de entrar) ven el estado nuevo.
         difundirEstado(sala, 'entrada');
+        difundirDirectorio();
       }
 
       if (typeof ack === 'function') ack({ ok: true, codigo: sala.codigo });
