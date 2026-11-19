@@ -64,6 +64,10 @@ function cargarSocketIO() {
       socket.on('connect', () => {
         actualizarEstadoConexion('conectado', 'Conectado al servidor');
       });
+      socket.on('bienvenida', (datos) => {
+        const mensaje = datos && typeof datos.mensaje === 'string' ? datos.mensaje : String(datos || '');
+        console.log(`[MonteCristo] ${mensaje}`, datos);
+      });
       socket.on('disconnect', () => {
         vistaMesa?.limpiar();
         if (buscarPorId('vista-mesa') && !buscarPorId('vista-mesa').hidden) {
@@ -91,6 +95,14 @@ function cargarSocketIO() {
       socket.on('turno_automatico', (datos) => vistaMesa?.recibirAutomatico(datos));
       socket.on('resultado', (datos) => vistaMesa?.recibirResultado(datos));
       socket.on('chat_mensaje', (datos) => vistaMesa?.recibirMensaje(datos));
+      socket.on('sala_cerrada', ({ codigo, motivo } = {}) => {
+        const mesa = buscarPorId('vista-mesa');
+        if (!mesa || mesa.hidden || codigo !== buscarPorId('codigo-creado').textContent) return;
+        vistaMesa.limpiar();
+        alternarVistaMesa(false);
+        mostrarAviso(buscarPorId('error-perfil'), motivo === 'sala_vacia'
+          ? 'La sala se cerró: ya no queda nadie en la mesa.' : 'La sala se cerró.');
+      });
       socket.on('error', manejarErrorServidor);
     } catch (error) {
       actualizarEstadoConexion('no-disponible', 'Servidor no disponible');
@@ -451,23 +463,13 @@ function enviarSolicitudPerfil(campoNombre, campoJuego) {
   }
 
   const evento = accionPerfil === 'crear' ? 'crear_sala' : 'entrar_sala';
-  let datosEvento;
+  const datosEvento = {
+    nombre: datosJugador.nombre,
+    avatar: datosJugador.avatar,
+    device_id: datosJugador.device_id,
+    ...(accionPerfil === 'crear' ? { juego: campoJuego.value } : { codigo: codigoDestino })
+  };
 
-  if (accionPerfil === 'crear') {
-    datosEvento = {
-      nombre: datosJugador.nombre,
-      avatar: datosJugador.avatar,
-      juego: campoJuego.value
-    };
-  } else {
-    datosEvento = {
-      codigo: codigoDestino,
-      nombre: datosJugador.nombre,
-      avatar: datosJugador.avatar
-    };
-  }
-
-  // device_id permanece guardado en localStorage; docs/04 no lo incluye en estos payloads.
   establecerEnviando(true);
   solicitudPendiente = true;
   temporizadorSolicitud = window.setTimeout(() => {

@@ -61,12 +61,22 @@ test('turnos y chat durante una mano: nombre, Enter, mensajes entre rondas y ais
   await expect(ines.locator('#mensajes-chat li')).toHaveCount(2);
   await captura(luz, '03-otra-sala.jpg', { fullPage: true });
 
-  await diego.getByRole('button', { name: 'Plantarse' }).click();
+  const [cierre] = await Promise.all([
+    ines.evaluate(() => new Promise((ok) => socket.once('resultado', ok))),
+    diego.getByRole('button', { name: 'Plantarse' }).click()
+  ]);
   await expect(ines.locator('#fase-mesa')).toHaveText('Resultados');
   await expect(ines.locator('#panel-chat')).toBeVisible(); // el resultado no interrumpe una conversación
   await ines.getByRole('tab', { name: 'Balance' }).click();
-  await expect(ines.locator('#nota-balance')).toContainText('devolución');
-  await expect(ines.locator('#filas-balance td:last-child')).toHaveText(['0', '0']);
+  await expect(ines.locator('#estado-ronda')).toHaveText(`Casa: ${cierre.resultado.casa.puntos} puntos`);
+  expect(cierre.apuestas.map((a) => a.nombre)).toEqual(['Inés', 'Diego']);
+  for (const a of cierre.apuestas) {
+    expect(a.neto).toBe(a.pago - a.monto);
+    const fila = ines.locator('#filas-balance tr').filter({ hasText: a.nombre });
+    await expect(fila.locator('td')).toHaveText([String(a.pago), a.neto > 0 ? `+${a.neto}` : String(a.neto)]);
+    const asiento = ines.locator('#asientos li').filter({ hasText: a.nombre });
+    await expect(asiento.locator('.asiento__saldo')).toHaveText(`${(1000 + a.neto).toLocaleString('es-MX')} fichas`);
+  }
   await ines.getByRole('button', { name: 'Nueva ronda' }).click();
   await expect(ines.locator('#balance-ronda')).toBeHidden();
   await ines.getByRole('tab', { name: 'Chat de sala' }).click();

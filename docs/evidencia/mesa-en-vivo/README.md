@@ -10,7 +10,7 @@ Se usó el servidor del proyecto con clientes independientes de Chromium, sin su
 | Animación breve y saltable | El efecto tiene **1,400 ms** programados. En la grabación, el control estuvo visible **1,541 ms** hasta el fin natural y **190 ms** en la ronda que se saltó. El saldo de Inés fue **910** antes y después de saltar. Se probaron tanto el botón como **Esc**, y la presentación sin movimiento. | [Revelación y botón](04-animacion.jpg) · [Video](animacion-y-salto.webm) |
 | Chat de sala | Durante un turno de blackjack, Diego e Inés enviaron con **Enter**. Cada cliente mostró ambos mensajes una sola vez, con el nombre correcto. La sala de ruleta de Luz solo recibió su propio mensaje. El chat permaneció al abrir la ronda siguiente, pero no al desconectarse y volver a entrar. | [Conversación](02-chat.jpg) · [Otra sala](03-otra-sala.jpg) |
 
-**Alcance:** las cifras proceden del servidor. En el cierre provisional de blackjack y póker se muestran las devoluciones reales; no se presentan como victorias de cartas. El chat no es un historial persistente.
+**Alcance de esta captura:** las cifras proceden del servidor. Esta evidencia se tomó antes de integrar el motor de blackjack de `main`. En la versión integrada, blackjack liquida contra la casa; solo póker conserva el cierre provisional con devolución. El chat no es un historial persistente.
 
 ## Pruebas ejecutadas
 

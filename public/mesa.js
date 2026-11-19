@@ -37,6 +37,12 @@ function crearVistaMesa(obtenerSocket) {
       nombre.textContent = jugador?.nombre ?? 'Libre';
       nombre.title = nombre.textContent;
       texto.append(numero, nombre);
+      if (jugador) {
+        const saldo = document.createElement('span');
+        saldo.className = 'asiento__saldo';
+        saldo.textContent = `${formato.format(jugador.fichas)} fichas`;
+        texto.append(saldo);
+      }
       if (jugador && sala.fase === 'jugando' && sala.turno?.activo && sala.turno.jugadorId === jugador.id) {
         lugar.classList.add('asiento--turno');
         const marca = document.createElement('span');

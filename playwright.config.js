@@ -11,5 +11,5 @@ module.exports = defineConfig({
     launchOptions: { executablePath: process.env.CHROMIUM_PATH },
     screenshot: 'only-on-failure'
   },
-  webServer: { command: 'node server.js', url: `${baseURL}/health`, env: { PORT: '3198', HOST: '127.0.0.1' } }
+  webServer: { command: 'node server.js', url: `${baseURL}/health`, env: { PORT: '3198', HOST: '127.0.0.1', DB_FILE: ':memory:' } }
 });

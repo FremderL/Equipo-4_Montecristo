@@ -3,7 +3,15 @@
 const { before, after, test } = require('node:test');
 const assert = require('node:assert/strict');
 const { once } = require('node:events');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 const { io: clienteIo } = require('socket.io-client');
+
+// Base de datos de pruebas en un archivo aparte: no toca data/casino.db.
+const archivoDb = path.join(os.tmpdir(), `montecristo-salas-${process.pid}.db`);
+process.env.DB_FILE = archivoDb;
+
 const { servidor, io } = require('../server.js');
 const { REGLAS } = require('../lib/reglas.js');
 
@@ -19,6 +27,9 @@ before(async () => {
 
 after(async () => {
   await io.close();
+  for (const sufijo of ['', '-wal', '-shm']) {
+    fs.rmSync(archivoDb + sufijo, { force: true });
+  }
 });
 
 async function conectar(t) {
@@ -121,13 +132,14 @@ test('el directorio refleja anfitrión y ocupación; una baja libera su asiento,
   await entrar(luz, codigo, 'Luz');
   const delDirectorio = async () => (await (await consultar('/api/salas')).json()).salas.find((s) => s.codigo === codigo);
   assert.deepEqual(await delDirectorio(), {
-    codigo, juego: 'roulette', fase: 'espera', anfitrion: 'Ana', jugadores: 3, capacidad: 6
+    id: `s_${codigo}`, codigo, juego: 'roulette', fase: 'espera', anfitrionId: ana.id,
+    anfitrion: 'Ana', jugadores: 3, capacidad: 6, asientosLibres: 3
   });
   await pedir(ana, 'salir_sala');
   assert.equal((await delDirectorio()).anfitrion, 'Bruno');
   assert.equal((await delDirectorio()).jugadores, 2);
   const [estado] = await Promise.all([unaVez(ana, 'estado_sala'), entrar(ana, codigo, 'Ana')]);
-  assert.deepEqual(estado.jugadores.map(({ nombre, asiento }) => [nombre, asiento]), [['Bruno', 2], ['Luz', 3], ['Ana', 1]]);
+  assert.deepEqual(estado.jugadores.map(({ nombre, asiento }) => [nombre, asiento]), [['Ana', 1], ['Bruno', 2], ['Luz', 3]]);
   for (const cliente of [ana, bruno, luz]) await pedir(cliente, 'salir_sala');
   assert.equal(await delDirectorio(), undefined);
 });

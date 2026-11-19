@@ -36,8 +36,9 @@ en tiempo real. Una persona crea una sala, comparte un enlace o un código de 5 
   atorada esperando a una persona.
 - **Servidor autoritativo**: los resultados (moneda, dado, ruleta y cartas) los genera y liquida el
   servidor; el navegador solo los muestra.
-- **Fichas virtuales**: cada jugador empieza con **1.000 fichas**, la apuesta mínima es **10** y los
-  pagos siguen la tabla de [`docs/02-reglas-y-pagos.md`](docs/02-reglas-y-pagos.md).
+- **Fichas virtuales**: cada perfil nuevo empieza con **1.000 fichas**. El saldo final de cada
+  ronda se guarda en SQLite y se recupera al volver a entrar desde el mismo navegador. La apuesta
+  mínima es **10** y los pagos siguen [`docs/02-reglas-y-pagos.md`](docs/02-reglas-y-pagos.md).
 - **Chat de sala**: escribe durante la partida y envía con **Enter**. Cada mensaje muestra el nombre del autor y solo llega a su sala.
 - **Sin registro**: solo hace falta un nombre y un avatar; no se pide correo ni contraseña.
 
@@ -73,13 +74,12 @@ Las reglas completas, los multiplicadores y los casos de prueba están en
 | Tiempo real | **Socket.IO** | 4.x | WebSocket: salas, eventos y difusión de estado |
 | Cliente | **HTML5 + CSS3 + JavaScript** (vanilla, sin framework) | — | Interfaz, avisos y animación local del resultado recibido |
 | Pruebas | **node:test** (incluido en Node) | — | Pruebas unitarias de reglas y pagos |
-| Persistencia | **Memoria + archivo JSON** (opcional) | — | Estado de salas y jugadores; **no requiere base de datos** |
+| Persistencia | **SQLite** (`better-sqlite3`) | 11.x | Perfiles, saldos e historial; las salas activas viven en memoria |
 | Control de versiones | **Git + GitHub** | — | Repositorio y trabajo en equipo |
 
-> La v1 **no usa base de datos** a propósito: cualquiera del equipo puede clonar el repo y
-> ejecutarlo sin instalar ni configurar nada más. El modelo de datos está documentado como esquema
-> relacional en [`docs/03-modelo-de-datos.md`](docs/03-modelo-de-datos.md), listo para migrar a
-> PostgreSQL más adelante.
+> No se necesita una base de datos externa. SQLite usa `data/casino.db` (o la ruta de `DB_FILE`)
+> y conserva los saldos al reiniciar si se vuelve a usar el mismo archivo. Las salas activas no
+> se restauran. El esquema está documentado en [`docs/03-modelo-de-datos.md`](docs/03-modelo-de-datos.md).
 
 ---
 
@@ -143,8 +143,8 @@ Entra a **http://localhost:3000** en tu navegador.
    apuesta confirmada no se puede cambiar ni repetir en esa ronda.
 4. En los juegos rápidos el anfitrión lanza con al menos una apuesta confirmada y abre la
    **Nueva ronda** desde resultados. En blackjack y póker se ilumina el asiento en turno y se
-   identifica al jugador en el centro. El cierre actual de estos dos juegos devuelve las fichas a
-   quienes siguen en la mano; no decide un ganador de cartas.
+   identifica al jugador en el centro. En blackjack la casa juega su mano y liquida cada apuesta.
+   En póker el cierre provisional devuelve las aportaciones de quienes siguen en la mesa.
 5. Al llegar el resultado aparece el **Balance de la ronda**: el pago incluye la apuesta; el
    **neto** indica la ganancia o pérdida individual. Puedes **Saltar animación** con el botón o
    **Esc**. La animación es local y se omite si tienes activado «reducir movimiento».
@@ -217,7 +217,7 @@ El anfitrión lanza un solo giro para toda la sala. Si sale cero, el resultado d
 `{ numero: 0, color: 'verde' }` y la apuesta del ejemplo cobra **3.600** fichas
 (**+3.500** netas). Si sale otro número, la apuesta cobra 0.
 
-### 8. Probar el reparto inicial de blackjack
+### 9. Probar el reparto y el turno en Blackjack
 
 Desde la consola del navegador en la página de MonteCristo, con el servidor encendido:
 
@@ -227,14 +227,18 @@ mesa21.on('cartas', ({ cartas, puntos }) => console.log('Tu mano:', cartas, punt
 mesa21.on('estado_sala', ({ casa }) => { if (casa) console.log('Casa:', casa.cartas, casa.puntos); });
 await mesa21.emitWithAck('crear_sala', { nombre: 'Ana', avatar: '🦊', juego: 'blackjack' });
 await mesa21.emitWithAck('comenzar');
-await mesa21.emitWithAck('apostar', { monto: 10, opcion: 'mano' });
+await mesa21.emitWithAck('apostar', { monto: 100, opcion: 'mano' });
 await mesa21.emitWithAck('repartir');
+await mesa21.emitWithAck('accion_blackjack', { accion: 'hit' });    // o 'pedir': roba otra carta
+await mesa21.emitWithAck('accion_blackjack', { accion: 'stand' });  // o 'plantarse': cierra la mano
 ```
 
-Cada jugador con apuesta recibe dos cartas en privado. En la mano pública de la casa, `null`
-representa la carta tapada: durante los turnos solo se cuentan los puntos visibles. Cuando todos
-se plantan (o vence su reloj), la casa muestra su segunda carta y su total. Este reparto no
-implementa las jugadas adicionales ni la liquidación de blackjack.
+Cada jugador con apuesta recibe dos cartas en privado. En su turno puede pedir otra carta (`hit` o
+`pedir`) tantas veces como quiera mientras no supere **21**, o plantarse (`stand` o `plantarse`)
+para ceder el turno. Si al pedir se pasa de **21**, pierde su apuesta de inmediato (`resultado: 'pierde'`,
+`pago: 0`) y el turno pasa al siguiente jugador. En la mano pública de la casa, `null` representa
+la carta tapada. Al cierre, si queda alguien en pie, la casa pide hasta 17; se revelan sus cartas
+y se paga según la comparación. Doblar, dividir y el seguro quedan fuera de este alcance.
 
 ### Modo desarrollo
 
@@ -250,8 +254,8 @@ Para detener el servidor pulsa `Ctrl + C` en la terminal.
 
 ## Despliegue en Render
 
-La v1 guarda el estado en memoria y no requiere base de datos gestionada. El repositorio incluye
-`render.yaml`, que describe el **Web Service Node.js** que Render crea al conectar el repositorio.
+La v1 usa SQLite para perfiles, saldos e historial, sin una base de datos gestionada. El repositorio
+incluye `render.yaml`, que describe el **Web Service Node.js** que Render crea al conectar el repositorio.
 
 ### Cómo desplegar
 
@@ -275,8 +279,8 @@ Render asigna `PORT` automáticamente. El blueprint define `NODE_ENV=production`
 `DB_FILE` queda en `data/casino.db` (efímero en plan free).
 
 > **Free vs pago:** el plan `free` (Hobby) apaga la instancia tras 15 min sin tráfico y no admite
-> discos persistentes. La v1 funciona así porque guarda el estado en memoria. Para producción
-> (plan `starter`/`profesional`), activa el disco persistente en `/data` con `DB_FILE=/data/casino.db`;
+> discos persistentes. Los perfiles, saldos e historial se pierden cuando Render descarta el archivo
+> SQLite. Para conservarlos en producción, activa un disco persistente en `/data` con `DB_FILE=/data/casino.db`;
 > ver [`docs/05-despliegue-render.md`](docs/05-despliegue-render.md).
 
 ### Evidencia del ticket
@@ -361,20 +365,72 @@ montecristo/
 │  ├─ styles.css, mesas.css          # estilos compartidos y de mesa
 │  ├─ app.js, juegos-ui.js, salon.js, mesa.js
 │  └─ ronda-ui.js, chat-mesa.js       # balance, revelación y conversación de sala
+├─ db/
+│  ├─ schema.sql          # DDL idempotente: jugadores, salas, partidas, apuestas, historial_rondas
+│  └─ migrar.js           # npm run db:migrar
 ├─ lib/
 │  ├─ reglas.js           # constantes y tabla de pagos (DOC-02)
+│  ├─ db.js               # conexión única a SQLite (better-sqlite3)
+│  ├─ esquema.js          # aplica db/schema.sql una sola vez por conexión
+│  ├─ jugadores.js        # crear · buscar por id · actualizar nombre, avatar y saldo
+│  ├─ fichas.js           # apuestas, pagos y reembolsos (usa lib/jugadores.js)
+│  ├─ historial.js        # historial_rondas: registrar la ronda terminada
 │  ├─ codigo-sala.js      # generación y validación de códigos de sala
 │  ├─ rng.js              # generador aleatorio con semilla
 │  ├─ turno.js            # reloj de turno: decide por quien no responde
 │  ├─ lanzamiento.js      # juegos rápidos: lanzar, liquidar y pasar a resultados
 │  ├─ salas.js            # estado en memoria (DOC-03)
-│  ├─ snapshot.js         # data/estado.json
-│  └─ juegos/             # juegos rápidos y reparto inicial de blackjack
-├─ data/                  # snapshot JSON (opcional)
+│  └─ juegos/             # moneda, dado, ruleta y blackjack
+├─ data/                  # base SQLite (data/casino.db)
 ├─ docs/                  # documentación del proyecto (01–05)
 ├─ e2e/                   # recorridos de la interfaz en Chromium
 └─ tests/                 # pruebas con los casos de DOC-02
 ```
+
+---
+
+## Jugadores: una sola puerta de entrada
+
+Todo el código que necesite jugadores pasa por **`lib/jugadores.js`**; no hay consultas sueltas
+sobre la tabla `jugadores` en ningún otro módulo. En las salas, las apuestas descuentan fichas en
+memoria. Al cerrar la ronda, el servidor guarda los saldos finales en una transacción de SQLite.
+Al crear o entrar en una sala, carga el saldo guardado del perfil sin volver a entregar las 1.000 fichas.
+
+| Función | Qué hace |
+| --- | --- |
+| `crearJugador({ id?, nombre, avatar?, saldo?, deviceId? })` | Inserta la fila con avatar `🙂` y 1.000 fichas por defecto. |
+| `buscarJugadorPorId(id)` · `buscarJugadorPorDispositivo(deviceId)` | Devuelven el jugador o `null`. |
+| `actualizarJugador(id, { nombre?, avatar?, saldo? })` | Actualiza los campos indicados y devuelve el jugador. |
+| `actualizarNombreJugador` · `actualizarAvatarJugador` · `actualizarSaldoJugador` | Atajos de un solo campo. |
+| `ajustarSaldoJugador(id, delta)` | Suma o resta fichas de forma atómica; nunca deja el saldo en negativo. |
+| `actualizarSaldosJugadores([{ id, saldo }, ...])` | Guarda juntos los saldos finales de los jugadores. |
+
+## Historial y estadísticas
+
+Las apuestas con resultado definitivo dejan **una fila por jugador y ronda** en `historial_rondas`
+(sala, juego, jugador, apuesta, resultado y fecha). La inserta `registrarRondaTerminada()` de
+`lib/historial.js` en cuanto la ronda pasa a `resultados`; repetir la llamada no duplica filas.
+
+```js
+const { historialDeJugador, estadisticasDeJugador } = require('./lib/historial.js');
+
+historialDeJugador('p_ana', { limite: 10 });     // últimas rondas de Ana
+estadisticasDeJugador('p_ana');                  // rondas, ganadas, apostado, cobrado, neto…
+```
+
+## Salas: entrar, salir y estado en tiempo real
+
+- **Entrar por código:** `entrar_sala` con el código de 5 caracteres (se acepta en minúsculas o con
+  espacios). Si el código no existe se responde `SALA_NO_ENCONTRADA`.
+- **Máximo 6 jugadores:** la mesa tiene 6 asientos numerados del 1 al 6; el séptimo recibe
+  `SALA_LLENA` y entra en cuanto alguien libere un asiento.
+- **Salir:** `salir_sala` libera el asiento, devuelve la apuesta pendiente si la ronda no se había
+  lanzado y pasa el rol de anfitrión al siguiente jugador. Si se va el último, la sala desaparece y
+  el servidor emite `sala_cerrada`.
+- **Estado en tiempo real:** cada cambio (alguien entra, sale o apuesta, y también cada fase, turno y
+  resultado) se difunde a **todos** los jugadores de la sala con el evento `estado_sala`, que incluye
+  `motivo` (`entrada`, `salida`, `apuesta`, `fase`, `turno`, `resultado`…). Nadie necesita recargar
+  la página.
 
 ---
 
@@ -400,7 +456,7 @@ montecristo/
 | La página carga pero dice «Desconectado» | Revisa que el servidor siga encendido y que no haya un bloqueador/proxy cerrando el WebSocket. |
 | Mis amigos no pueden entrar desde otra red | Necesitas exponer el puerto (ngrok o similar) o desplegar el servidor en un hosting. |
 | El navegador muestra una versión vieja de la página | Recarga con `Ctrl + Shift + R` (Windows/Linux) o `Cmd + Shift + R` (macOS). |
-| Las fichas volvieron a 1.000 al reiniciar | Es el comportamiento por defecto; activa `GUARDAR_ESTADO=true` para conservarlas. |
+| Las fichas volvieron a 1.000 | Comprueba que estás en el mismo navegador y que el servidor conserva el mismo archivo SQLite (`DB_FILE`). Borrar los datos del sitio o abrirlo en incógnito crea otro perfil. |
 | La mesa se queda esperando a alguien que no responde | No debería: a los 25 s (blackjack) o 30 s (póker) el servidor juega por esa persona y sigue. Para comprobarlo rápido arranca con `TIEMPO_TURNO_BLACKJACK_MS=5000 npm start`. |
 
 Si algo no está en esta lista, abre un *issue* en el repositorio con el sistema operativo, la

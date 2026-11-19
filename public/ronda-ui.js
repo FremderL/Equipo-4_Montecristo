@@ -4,6 +4,7 @@ const formatoNeto = new Intl.NumberFormat('es-MX', { signDisplay: 'exceptZero' }
 function tituloDelResultado(resultado) {
   if (resultado?.lado) return `Salió ${resultado.lado}`;
   if (resultado?.numero != null) return `Salió el ${resultado.numero}${resultado.color ? ` · ${resultado.color}` : ''}`;
+  if (resultado?.casa) return `Casa: ${resultado.casa.puntos} puntos`;
   return 'Mano cerrada';
 }
 
@@ -41,7 +42,7 @@ function crearVistaResultados() {
   document.addEventListener('visibilitychange', () => { if (document.hidden) terminar(); });
 
   function mostrarPieza(juego, resultado) {
-    const clave = `${juego}:${resultado.lado ?? resultado.numero ?? resultado.tipo}`;
+    const clave = `${juego}:${resultado.lado ?? resultado.numero ?? resultado.casa?.puntos ?? resultado.tipo}`;
     if (pieza.dataset.valor !== clave) {
       pieza.dataset.valor = clave;
       pieza.dataset.juego = juego;
@@ -55,7 +56,7 @@ function crearVistaResultados() {
           return punto;
         }));
       } else {
-        pieza.textContent = resultado.lado ?? resultado.numero ?? '♦';
+        pieza.textContent = resultado.lado ?? resultado.numero ?? resultado.casa?.puntos ?? '♦';
       }
     }
     pieza.hidden = false;
