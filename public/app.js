@@ -15,6 +15,7 @@ const CLAVE_PERFIL = 'montecristo.perfil';
 const FORMATO_CODIGO_SALA = /^[A-Z0-9]{5}$/;
 
 let socket = null;
+let vistaMesa = null;
 let accionPerfil = 'crear';
 let codigoDestino = '';
 let avatarSeleccionado = AVATARES[0];
@@ -31,9 +32,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
   if (document.body.dataset.pagina === 'inicio') {
     iniciarInicio();
+    iniciarDirectorio();
   }
 
   if (document.body.dataset.pagina === 'perfil') {
+    vistaMesa = crearVistaMesa(() => socket);
     iniciarPerfil();
   }
 });
@@ -62,11 +65,16 @@ function cargarSocketIO() {
         actualizarEstadoConexion('conectado', 'Conectado al servidor');
       });
       socket.on('disconnect', () => {
-        const salaLista = buscarPorId('sala-lista');
-        if (salaLista && !salaLista.hidden) {
-          salaLista.hidden = true;
-          mostrarAviso(buscarPorId('error-perfil'), 'Se perdió la conexión con la sala. Cuando se restablezca, vuelve a intentarlo.');
+        vistaMesa?.limpiar();
+        if (buscarPorId('vista-mesa') && !buscarPorId('vista-mesa').hidden) {
+          // El servidor libera el asiento al desconectar. No reutilizar ese saldo ni ese id.
+          accionPerfil = 'entrar';
+          codigoDestino = buscarPorId('codigo-creado').textContent;
+          configurarIntencion(buscarPorId('juego-sala'));
+          alternarVistaMesa(false);
+          mostrarAviso(buscarPorId('error-perfil'), 'Se perdió la conexión y se liberó tu asiento. Cuando se restablezca, intenta entrar de nuevo.');
         }
+        finalizarEnvio();
 
         if (socket && socket.active) {
           actualizarEstadoConexion('conectando', 'Conectando…');
@@ -77,7 +85,12 @@ function cargarSocketIO() {
       socket.on('connect_error', () => {
         actualizarEstadoConexion('no-disponible', 'Servidor no disponible');
       });
-      socket.on('estado_sala', mostrarJugadoresDeSala);
+      socket.on('estado_sala', (estado) => vistaMesa?.recibir(estado));
+      socket.on('cartas', (datos) => vistaMesa?.recibirCartas(datos));
+      socket.on('turno', (datos) => vistaMesa?.recibirTurno(datos));
+      socket.on('turno_automatico', (datos) => vistaMesa?.recibirAutomatico(datos));
+      socket.on('resultado', (datos) => vistaMesa?.recibirResultado(datos));
+      socket.on('chat_mensaje', (datos) => vistaMesa?.recibirMensaje(datos));
       socket.on('error', manejarErrorServidor);
     } catch (error) {
       actualizarEstadoConexion('no-disponible', 'Servidor no disponible');
@@ -587,30 +600,25 @@ function limpiarTemporizadorSolicitud() {
   }
 }
 
+function alternarVistaMesa(activa) {
+  buscarPorId('vista-perfil').hidden = activa;
+  buscarPorId('vista-mesa').hidden = !activa;
+  buscarPorId('contexto-pagina').textContent = activa ? 'Mesa de juego' : 'Tu perfil de jugador';
+  document.title = `${activa ? 'Tu mesa' : 'Tu perfil'} · MonteCristo`;
+  if (activa) {
+    buscarPorId('titulo-mesa').focus({ preventScroll: true });
+    window.scrollTo({ top: 0, behavior: 'instant' });
+  } else buscarPorId('nombre-jugador').focus();
+}
+
 function mostrarSala(codigo) {
-  // Mantén la página y su socket abiertos: navegar cerraría el asiento del jugador.
-  const regionLista = buscarPorId('sala-lista');
+  // Sin navegar: estado_sala llega antes del ack y el asiento pertenece a este socket.
   finalizarEnvio();
   mostrarAviso(buscarPorId('error-perfil'), '');
-
   buscarPorId('codigo-creado').textContent = codigo;
   buscarPorId('enlace-sala').href = `/sala/${codigo}`;
   buscarPorId('estado-copia').textContent = '';
-  regionLista.hidden = false;
-  regionLista.focus();
-}
-
-function mostrarJugadoresDeSala({ jugadores, capacidad }) {
-  const lista = buscarPorId('jugadores-sala');
-  if (!lista) return;
-
-  buscarPorId('ocupacion-sala').textContent = `${jugadores.length} de ${capacidad} jugadores`;
-  lista.replaceChildren(...jugadores.map(({ nombre, avatar, esAnfitrion }) => {
-    const item = document.createElement('li');
-    item.className = 'badge';
-    item.textContent = `${avatar} ${nombre}${esAnfitrion ? ' (anfitrión)' : ''}`;
-    return item;
-  }));
+  alternarVistaMesa(true);
 }
 
 async function copiarCodigoSala() {
@@ -634,6 +642,10 @@ function manejarErrorServidor(datos) {
   }
 
   if (document.body.dataset.pagina === 'perfil') {
+    if (!buscarPorId('vista-mesa').hidden) {
+      mostrarAviso(buscarPorId('error-mesa'), mensaje);
+      return;
+    }
     finalizarEnvio();
     mostrarAviso(buscarPorId('error-perfil'), mensaje);
   }

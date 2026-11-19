@@ -29,7 +29,7 @@ en tiempo real. Una persona crea una sala, comparte un enlace o un código de 5 
 
 ## Qué hace el proyecto
 
-- **Salas privadas de hasta 6 jugadores** con enlace o código de 5 caracteres (ej. `K7Q2M`).
+- **Salas de hasta 6 jugadores**: elige una con cupo en el directorio o entra con enlace o código de 5 caracteres (ej. `K7Q2M`).
 - **Estado en tiempo real**: cada apuesta, carta, turno y resultado se ve al instante en la sala.
 - **Reloj de turno**: 25 s en blackjack y 30 s en póker. Si nadie responde, **el servidor decide por
   ese jugador** (se planta, o pasa/se retira en póker) y la partida sigue: ninguna mesa se queda
@@ -38,7 +38,7 @@ en tiempo real. Una persona crea una sala, comparte un enlace o un código de 5 
   servidor; el navegador solo los muestra.
 - **Fichas virtuales**: cada jugador empieza con **1.000 fichas**, la apuesta mínima es **10** y los
   pagos siguen la tabla de [`docs/02-reglas-y-pagos.md`](docs/02-reglas-y-pagos.md).
-- **Chat de sala** para hablar mientras se juega.
+- **Chat de sala**: escribe durante la partida y envía con **Enter**. Cada mensaje muestra el nombre del autor y solo llega a su sala.
 - **Sin registro**: solo hace falta un nombre y un avatar; no se pide correo ni contraseña.
 
 ### Diagramas
@@ -71,7 +71,7 @@ Las reglas completas, los multiplicadores y los casos de prueba están en
 | Lenguaje | **Node.js** | 18 o superior (recomendada 20 LTS) | Ejecuta el servidor y las pruebas |
 | Servidor HTTP | **Express** | 4.x | Sirve los archivos estáticos y la API REST |
 | Tiempo real | **Socket.IO** | 4.x | WebSocket: salas, eventos y difusión de estado |
-| Cliente | **HTML5 + CSS3 + JavaScript** (vanilla, sin framework) | — | Interfaz y animaciones (canvas para la ruleta) |
+| Cliente | **HTML5 + CSS3 + JavaScript** (vanilla, sin framework) | — | Interfaz, avisos y animación local del resultado recibido |
 | Pruebas | **node:test** (incluido en Node) | — | Pruebas unitarias de reglas y pagos |
 | Persistencia | **Memoria + archivo JSON** (opcional) | — | Estado de salas y jugadores; **no requiere base de datos** |
 | Control de versiones | **Git + GitHub** | — | Repositorio y trabajo en equipo |
@@ -135,13 +135,25 @@ Entra a **http://localhost:3000** en tu navegador.
 ### 5. Crea tu primera sala
 
 1. Pulsa **Crear sala**, escribe tu nombre, elige tu avatar y selecciona un juego.
-2. En **Sala lista**, pulsa **Copiar código** y compártelo con tus amigos. El servidor genera un
-   código de 5 letras o números y comprueba que no se repita entre salas activas.
-3. Tus amigos pueden escribirlo en **Entrar con código** desde el inicio o abrir el **Enlace de
-   invitación**. Tras completar su perfil, aparecerán en la lista de la misma sala.
+2. En la mesa verás tus fichas, los seis asientos y el estado de la ronda. Para invitar, usa
+   **Copiar código** o **Enlace de invitación**. También se puede pulsar **Entrar** junto a la
+   sala en **Salas abiertas**: el inicio muestra juego, anfitrión y ocupación (p. ej., `3/6`).
+3. Como anfitrión pulsa **Abrir apuestas**. Elige opción y monto entero (de 10 a tu saldo) y
+   pulsa **Confirmar apuesta**. El saldo solo cambia al recibir el estado del servidor. Una
+   apuesta confirmada no se puede cambiar ni repetir en esa ronda.
+4. En los juegos rápidos el anfitrión lanza con al menos una apuesta confirmada y abre la
+   **Nueva ronda** desde resultados. En blackjack y póker se ilumina el asiento en turno y se
+   identifica al jugador en el centro. El cierre actual de estos dos juegos devuelve las fichas a
+   quienes siguen en la mano; no decide un ganador de cartas.
+5. Al llegar el resultado aparece el **Balance de la ronda**: el pago incluye la apuesta; el
+   **neto** indica la ganancia o pérdida individual. Puedes **Saltar animación** con el botón o
+   **Esc**. La animación es local y se omite si tienes activado «reducir movimiento».
+6. Abre la pestaña **Chat de sala**, escribe hasta 200 caracteres y pulsa **Enter** o **Enviar
+   mensaje**. Puedes seguir los turnos y ver los netos en los asientos sin cerrar el chat.
+   [Evidencia de avisos, animación y chat](docs/evidencia/mesa-en-vivo/README.md).
 
-Mantén abierta la pestaña de la sala para conservar tu asiento. El código deja de funcionar cuando
-la sala queda vacía. Por ahora, las rondas de Cara o Cruz se pueden probar desde la consola (paso 7).
+Mantén abierta la pestaña para conservar tu asiento. Salir o desconectarse lo libera; cuando
+sale la última persona, el servidor elimina la sala. [Capturas y pruebas del flujo](docs/evidencia/README.md).
 
 ### 6. Comprueba el reloj de turno
 
@@ -160,8 +172,8 @@ jugador y `estado_sala` trae la acción marcada como `automatica: true`.
 ### 7. Juega una ronda de Cara o Cruz
 
 Cara o Cruz ya corre completo en el servidor: cada quien apuesta a `cara` o `cruz`, el anfitrión
-manda `lanzar`, **el servidor** lanza la moneda y paga **×2** a quien acertó. Mientras llega la
-pantalla de la mesa se puede jugar desde la consola del navegador: con el servidor encendido, abre
+manda `lanzar`, **el servidor** lanza la moneda y paga **×2** a quien acertó. Además de usar
+los controles de la mesa, se puede inspeccionar el protocolo desde la consola: con el servidor encendido, abre
 http://localhost:3000, pulsa `F12` y pega estas líneas una por una.
 
 ```js
@@ -188,8 +200,8 @@ o a un número exacto de `n:0` a `n:36` (×36). Si sale **0**, pierden las apues
 paridad: solo cobra quien eligió `n:0`. Los pagos incluyen lo apostado. Las apuestas de rango,
 docena y columna quedan fuera de esta implementación.
 
-Mientras llega la pantalla de la mesa, abre la consola del navegador en la página de inicio
-con el servidor encendido y ejecuta estas líneas:
+Para probar el mismo flujo sin la interfaz, abre la consola en la página de inicio con el
+servidor encendido y ejecuta estas líneas:
 
 ```js
 const ruleta = io();
@@ -286,8 +298,8 @@ Render asigna `PORT` automáticamente. El blueprint define `NODE_ENV=production`
 | **Misma red Wi-Fi** | Quien ejecuta el servidor comparte su IP local: `http://192.168.X.X:3000`. Obtenla con `ipconfig` (Windows) o `ip a` / `ifconfig` (macOS/Linux). |
 | **Otra red / internet** | Hay que exponer el puerto 3000 (por ejemplo con [ngrok](https://ngrok.com): `ngrok http 3000`) y compartir la URL que genera. |
 
-> **Recordatorio:** comparte el enlace solo con las personas que quieres invitar; cualquiera que
-> tenga el código puede entrar a la sala mientras exista.
+> **Acceso:** cualquier persona con acceso al servidor puede encontrar la sala en el directorio y
+> entrar mientras tenga cupo. El código es un atajo de invitación, no una contraseña.
 
 ---
 
@@ -298,6 +310,7 @@ Render asigna `PORT` automáticamente. El blueprint define `NODE_ENV=production`
 | `npm start` | Inicia el servidor en el puerto 3000 (o el de `PORT`) |
 | `npm run dev` | Igual que `npm start`, pensado para desarrollo |
 | `npm test` | Ejecuta las pruebas de reglas, pagos, validaciones e ingreso a salas |
+| `npm run test:e2e` | Prueba el directorio, la mesa, las apuestas, los avisos y el chat en Chromium. Ver [preparación y evidencia](docs/evidencia/README.md). |
 | `npm run db:migrar` | Aplica `db/schema.sql` sobre SQLite (idempotente; lo usa Render al arrancar) |
 | `npm run lint` | Revisa el estilo del código con ESLint |
 
@@ -344,9 +357,10 @@ montecristo/
 ├─ .nvmrc                 # Node 20 LTS (Render)
 ├─ .renderignore          # lo que Render NO sube al build
 ├─ public/                # todo lo que ve el navegador
-│  ├─ index.html
-│  ├─ styles.css
-│  └─ app.js
+│  ├─ index.html, perfil.html        # salón, perfil y mesa
+│  ├─ styles.css, mesas.css          # estilos compartidos y de mesa
+│  ├─ app.js, juegos-ui.js, salon.js, mesa.js
+│  └─ ronda-ui.js, chat-mesa.js       # balance, revelación y conversación de sala
 ├─ lib/
 │  ├─ reglas.js           # constantes y tabla de pagos (DOC-02)
 │  ├─ codigo-sala.js      # generación y validación de códigos de sala
@@ -355,9 +369,10 @@ montecristo/
 │  ├─ lanzamiento.js      # juegos rápidos: lanzar, liquidar y pasar a resultados
 │  ├─ salas.js            # estado en memoria (DOC-03)
 │  ├─ snapshot.js         # data/estado.json
-│  └─ juegos/             # motores implementados: coinflip y roulette
+│  └─ juegos/             # juegos rápidos y reparto inicial de blackjack
 ├─ data/                  # snapshot JSON (opcional)
 ├─ docs/                  # documentación del proyecto (01–05)
+├─ e2e/                   # recorridos de la interfaz en Chromium
 └─ tests/                 # pruebas con los casos de DOC-02
 ```
 

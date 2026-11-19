@@ -3,9 +3,12 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="MonteCristo: un casino social para jugar con amigos en salas privadas, solo con fichas virtuales.">
+  <meta name="description" content="MonteCristo: un casino social para jugar con amigos en salas de hasta seis personas, solo con fichas virtuales.">
   <title>MonteCristo · Casino social</title>
   <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="mesas.css">
+  <script src="juegos-ui.js" defer></script>
+  <script src="salon.js" defer></script>
   <script src="app.js" defer></script>
 </head>
 <body data-pagina="inicio">
@@ -14,10 +17,12 @@
       <div class="contenedor cabecera__interior">
         <a class="marca" href="index.html" aria-label="MonteCristo, página de inicio">
           <span class="marca__sello" aria-hidden="true">M</span>
-          <span>MonteCristo</span>
+          <span class="marca__nombre">MonteCristo<small>Casino social</small></span>
         </a>
         <div class="cabecera__acciones">
-          <span class="badge badge--dorado">Salas privadas · hasta 6 personas</span>
+          <nav class="nav-salon" aria-label="Secciones del salón">
+            <a href="#salas-abiertas">Salas</a><a href="#juegos">Juegos</a>
+          </nav>
           <div class="estado-conexion" id="estado-conexion" data-estado="conectando" role="status" aria-live="polite">
             <span class="estado-conexion__punto" aria-hidden="true"></span>
             <span class="estado-conexion__texto">Conectando…</span>
@@ -27,71 +32,56 @@
     </header>
 
     <main class="contenedor contenido" id="contenido">
-      <section class="hero-grid" aria-labelledby="titulo-principal">
-        <div class="hero-copy">
-          <p class="eyebrow"><span class="eyebrow__marca" aria-hidden="true"></span> Tu mesa, tus amigos</p>
-          <h1 class="hero__titulo" id="titulo-principal">Monte<span class="hero__titulo-acento">Cristo</span></h1>
-          <p class="hero__descripcion">Un casino social para jugar con amigos en salas de hasta seis personas. Elige entre cinco juegos, comparte la mesa y disfruta con fichas virtuales; aquí no hay dinero real.</p>
-
-          <ul class="hero__datos" aria-label="Características de MonteCristo">
-            <li><span class="hero__dato-icono" aria-hidden="true">6</span> Hasta 6 personas</li>
-            <li><span class="hero__dato-icono" aria-hidden="true">5</span> Juegos clásicos</li>
-            <li><span class="hero__dato-icono" aria-hidden="true">✦</span> Fichas virtuales</li>
-          </ul>
-
-          <section class="tarjeta panel-acceso" aria-labelledby="titulo-acceso">
-            <div class="panel-acceso__cabecera">
-              <div>
-                <p class="panel-acceso__subtitulo">Una mesa te espera</p>
-                <h2 class="panel-acceso__titulo" id="titulo-acceso">¿Cómo quieres jugar?</h2>
-              </div>
-              <span class="badge badge--menta">Sin depósitos</span>
-            </div>
-
-            <button class="btn btn--primario btn--grande" id="crear-sala" type="button">
-              Crear sala <span class="btn__flecha" aria-hidden="true">→</span>
-            </button>
-
-            <div class="panel-acceso__separador" aria-hidden="true">o entra a una sala</div>
-
-            <form class="codigo-form" id="formulario-codigo" action="perfil.html" method="get" novalidate>
+      <section class="portada" aria-labelledby="titulo-principal">
+        <div class="portada__texto">
+          <p class="rotulo rotulo--oro"><span aria-hidden="true">◆</span> MonteCristo &nbsp;/&nbsp; Salón principal</p>
+          <h1 id="titulo-principal">El salón de <em>juego.</em></h1>
+          <p class="portada__bajada">Toma asiento con tus amigos. Hasta seis personas por mesa, solo con fichas virtuales.</p>
+          <div class="portada__acciones">
+            <button class="btn btn--dorado" id="crear-sala" type="button"><span aria-hidden="true">+</span> Crear sala</button>
+            <form class="entrada-codigo" id="formulario-codigo" action="perfil.html" method="get" novalidate>
               <input type="hidden" name="accion" value="entrar">
-              <div class="campo">
-                <label for="codigo-sala">Entrar con código</label>
-                <input
-                  id="codigo-sala"
-                  name="codigo"
-                  type="text"
-                  inputmode="text"
-                  autocomplete="off"
-                  autocapitalize="characters"
-                  maxlength="5"
-                  minlength="5"
-                  pattern="[A-Za-z0-9]{5}"
-                  placeholder="K7Q2M"
-                  aria-describedby="codigo-ayuda"
-                  required
-                  spellcheck="false"
-                >
-                <span class="campo__ayuda" id="codigo-ayuda">5 letras o números, sin espacios ni símbolos.</span>
-              </div>
-              <button class="btn btn--secundario" type="submit">Entrar</button>
+              <label for="codigo-sala" class="sr-only">Código de sala (5 letras o números)</label>
+              <input id="codigo-sala" name="codigo" type="text" autocomplete="off" autocapitalize="characters" maxlength="5" minlength="5" pattern="[A-Za-z0-9]{5}" placeholder="Código de sala" required spellcheck="false">
+              <button type="submit" aria-label="Entrar con código">Entrar <span aria-hidden="true">→</span></button>
             </form>
-            <p class="aviso aviso--peligro mensaje" id="error-inicio" role="alert" aria-live="assertive" hidden></p>
-          </section>
+          </div>
+          <p class="aviso aviso--peligro mensaje" id="error-inicio" role="alert" hidden></p>
         </div>
-
-        <figure class="hero-visual">
-          <img src="assets/casino-hero.jpg" alt="Salón oscuro y elegante con una mesa de casino verde bajo una luminaria dorada">
-          <span class="hero-visual__sello">Juega en buena compañía</span>
-          <figcaption class="hero-visual__caption">
-            <strong>La emoción de la mesa, sin salir de casa.</strong>
-            <span>Comparte un código de cinco caracteres e invita a tu grupo.</span>
-          </figcaption>
-        </figure>
       </section>
 
-      <section class="juegos" aria-labelledby="titulo-juegos">
+      <section class="directorio" id="salas-abiertas" aria-labelledby="titulo-directorio">
+        <div class="directorio__titulo">
+          <div>
+            <p class="rotulo"><span class="trazo" aria-hidden="true"></span> Directorio de mesas</p>
+            <h2 id="titulo-directorio">Salas abiertas <span id="total-salas" class="contador" aria-live="polite" hidden></span></h2>
+          </div>
+          <button class="btn btn--fantasma btn--corto" id="actualizar-salas" type="button">
+            <svg class="icono" aria-hidden="true"><use href="assets/mesa-iconos.svg#actualizar"/></svg> Actualizar
+          </button>
+        </div>
+        <div class="directorio__panel">
+          <table class="tabla-salas" id="tabla-salas" aria-labelledby="titulo-directorio" hidden>
+            <thead><tr><th scope="col">Juego / Sala</th><th scope="col">Anfitrión</th><th scope="col">Jugadores</th><th scope="col"><span class="sr-only">Acceso</span></th></tr></thead>
+            <tbody id="filas-salas"></tbody>
+          </table>
+          <div class="directorio__aviso" id="aviso-directorio">
+            <svg class="directorio__icono" aria-hidden="true"><use href="assets/mesa-iconos.svg#cartas"/></svg>
+            <div><strong id="estado-directorio" role="status">Buscando salas…</strong><p id="detalle-directorio">Consultando los asientos disponibles.</p></div>
+          </div>
+        </div>
+        <template id="fila-sala">
+          <tr>
+            <td><div class="juego-directorio"><img width="72" height="48" alt=""><div><strong></strong><small></small></div></div></td>
+            <td><div class="persona-directorio"><span class="inicial" aria-hidden="true"></span><span class="anfitrion"></span></div></td>
+            <td><div class="cupos"><strong></strong><span class="cupos__marcas" aria-hidden="true"></span></div></td>
+            <td><a class="btn entrar-mesa">Entrar <span aria-hidden="true">→</span></a></td>
+          </tr>
+        </template>
+        <p class="nota-directorio"><span aria-hidden="true">◇</span> Solo se muestran mesas con asientos libres. La lista se actualiza automáticamente.</p>
+      </section>
+
+      <section class="juegos" id="juegos" aria-labelledby="titulo-juegos">
         <div class="juegos__cabecera">
           <div>
             <p class="eyebrow"><span class="eyebrow__marca" aria-hidden="true"></span> Elige tu próxima partida</p>

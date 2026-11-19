@@ -22,7 +22,10 @@ const { validarApuesta } = require('./lib/fichas.js');
 const { crearRelojDeTurnos, tiempoDeTurno } = require('./lib/turno.js');
 const { lanzarRonda, vistaDeApuesta, nuevaSemilla } = require('./lib/lanzamiento.js');
 const { crearRng } = require('./lib/rng.js');
+const { generarCodigoSala, normalizarCodigoSala } = require('./lib/codigo-sala.js');
 const coinflip = require('./lib/juegos/coinflip.js');
+const dice = require('./lib/juegos/dice.js');
+const roulette = require('./lib/juegos/roulette.js');
 const { contarPuntos, repartirInicial, vistaDeCasa } = require('./lib/juegos/blackjack.js');
 
 const PUERTO = Number(process.env.PORT) || 3000;
@@ -33,6 +36,7 @@ const JUEGOS = ['coinflip', 'dice', 'roulette', 'blackjack', 'poker'];
 /** Juegos rápidos con motor listo: un lanzamiento y una liquidación para toda la sala. */
 const MOTORES_RAPIDOS = new Map([
   [coinflip.JUEGO, coinflip],
+  [dice.JUEGO, dice],
   [roulette.JUEGO, roulette]
 ]);
 
@@ -103,6 +107,7 @@ function estadoDeSala(sala) {
     juego: sala.juego,
     fase: sala.fase,
     anfitrionId: sala.anfitrionId,
+    apuestaMinima: REGLAS.APUESTA_MINIMA,
     capacidad: REGLAS.JUGADORES_POR_SALA,
     asientosLibres: REGLAS.JUGADORES_POR_SALA - sala.jugadores.size,
     numeroRonda: sala.numero_ronda,
@@ -110,7 +115,7 @@ function estadoDeSala(sala) {
     // aunque todavía no haya nadie en turno.
     limiteTurnoMs: limiteDeTurno(sala.juego),
     turno: sala.turnos ? sala.turnos.vistaPublica() : null,
-    // Resultado autoritativo de la ronda: null hasta que el servidor lanza. Quien
+    // Resultado autoritativo: null hasta el lanzamiento o el cierre de la mano. Quien
     // entra con la ronda ya en `resultados` lo recibe aquí. La semilla nunca se difunde.
     resultado: sala.resultado || null,
     ...(sala.juego === 'blackjack' && {
@@ -127,6 +132,7 @@ function estadoDeSala(sala) {
     })),
     jugadores: jugadoresDeSala(sala).map((jugador) => ({
       id: jugador.id,
+      asiento: jugador.asiento,
       nombre: jugador.nombre,
       avatar: jugador.avatar,
       fichas: jugador.fichas,
@@ -137,6 +143,11 @@ function estadoDeSala(sala) {
 
 function difundirEstado(sala) {
   io.to(sala.codigo).emit('estado_sala', estadoDeSala(sala));
+}
+
+// Los avisos puntuales se pueden asociar al mismo estado aunque cambie la ronda.
+function avisarRonda(sala, evento, datos) {
+  io.to(sala.codigo).emit(evento, { ...datos, codigo: sala.codigo, numeroRonda: sala.numero_ronda });
 }
 
 /** Estructura de una sala en memoria (DOC-03 + reloj de turno). */
@@ -168,14 +179,23 @@ function crearSala(codigo, juego, anfitrionId, jugador) {
   };
 }
 
-function crearJugador(socketId, { nombre, avatar }) {
+function crearJugador(socketId, { nombre, avatar }, asiento = 1) {
   return {
     id: socketId,
+    asiento,
     nombre: validarNombre(nombre),
     avatar: validarAvatar(avatar),
     fichas: REGLAS.SALDO_INICIAL,
     conectado: true
   };
+}
+
+// Los jugadores conservan su lugar cuando otro sale; el siguiente ocupa el primer hueco.
+function primerAsientoLibre(sala) {
+  const ocupados = new Set(jugadoresDeSala(sala).map((jugador) => jugador.asiento));
+  let asiento = 1;
+  while (ocupados.has(asiento)) asiento++;
+  return asiento;
 }
 
 function asignarAnfitrion(sala) {
@@ -205,6 +225,9 @@ function abandonarSala(socket) {
   socket.leave(codigo);
 
   if (!sala) return;
+
+  const saliente = sala.jugadores.get(socket.id);
+  if (saliente) saliente.conectado = false; // retirarJugador puede cerrar la mano en este mismo paso
 
   // Si se va (o se desconecta) cuando le tocaba jugar, el servidor decide por él
   // y la vuelta sigue: la mesa no se queda esperando a quien ya no está.
@@ -322,8 +345,12 @@ function cobrarAccionDePoker(sala, registro) {
 function devolverApuestas(sala) {
   for (const apuesta of sala.apuestas) {
     const jugador = sala.jugadores.get(apuesta.jugadorId);
-    if (!jugador) continue; // quien salió en juego no se reembolsa (DOC-04 §5)
-    jugador.fichas += apuesta.monto + (Number(sala.puestas[apuesta.jugadorId]) || 0);
+    const totalAportado = apuesta.monto + (sala.puestas[apuesta.jugadorId] || 0);
+    const pago = jugador?.conectado ? totalAportado : 0; // sin devolución a quien ya salió en juego
+    if (pago) jugador.fichas += pago;
+    // Registrar el movimiento real, no una victoria de cartas que el motor no ha resuelto.
+    Object.assign(apuesta, { totalAportado, pago, neto: pago - totalAportado,
+      multiplicador: pago ? 1 : 0, resultado: pago ? 'empate' : 'pierde' });
   }
   sala.bote = 0;
   sala.apuestaActual = 0;
@@ -332,11 +359,12 @@ function devolverApuestas(sala) {
 
 /** Todos resolvieron su turno: se cierra la mano y la sala pasa a resultados. */
 function cerrarMano(sala, motivo) {
-  if (sala.fase === FASES.JUGANDO) {
-    devolverApuestas(sala);
-    cambiarFase(sala, FASES.RESULTADOS, { servidor: true });
-  }
-  io.to(sala.codigo).emit('turno', turnoSinJugador(sala, motivo || 'mano_cerrada'));
+  if (sala.fase !== FASES.JUGANDO) return;
+  devolverApuestas(sala);
+  cambiarFase(sala, FASES.RESULTADOS, { servidor: true });
+  sala.resultado = { tipo: 'devolucion' };
+  avisarRonda(sala, 'turno', turnoSinJugador(sala, motivo || 'mano_cerrada'));
+  avisarRonda(sala, 'resultado', { juego: sala.juego, resultado: sala.resultado, apuestas: sala.apuestas.map(vistaDeApuesta) });
   difundirEstado(sala);
 }
 
@@ -362,7 +390,7 @@ function iniciarTurnos(sala, orden) {
     contexto: (jugadorId) => contextoDelTurno(sala, jugadorId),
     validar: (jugadorId, accion, extra) => validarAccionDeTurno(sala, jugadorId, accion, extra),
     alIniciarTurno: (turno) => {
-      io.to(sala.codigo).emit('turno', turno);
+      avisarRonda(sala, 'turno', turno);
       difundirEstado(sala);
     },
     alResolver: (registro) => {
@@ -370,13 +398,12 @@ function iniciarTurnos(sala, orden) {
       sala.acciones.push(registro);
       if (registro.automatica) {
         // Aviso explícito: el jugador ve que fue el servidor quien decidió por él.
-        io.to(sala.codigo).emit('turno_automatico', {
+        avisarRonda(sala, 'turno_automatico', {
           jugadorId: registro.jugadorId,
           nombre: nombreDe(sala, registro.jugadorId),
           accion: registro.accion,
           motivo: registro.motivo,
-          mensaje: registro.mensaje,
-          numeroRonda: sala.numero_ronda
+          mensaje: registro.mensaje
         });
       }
       difundirEstado(sala);
@@ -386,7 +413,7 @@ function iniciarTurnos(sala, orden) {
       cerrarMano(sala, resumen.motivo);
     },
     alCancelar: (resumen) => {
-      io.to(sala.codigo).emit('turno', turnoSinJugador(sala, resumen.motivo));
+      avisarRonda(sala, 'turno', turnoSinJugador(sala, resumen.motivo));
       difundirEstado(sala);
     }
   });
@@ -447,6 +474,7 @@ app.get('/api/salas', (req, res) => {
     codigo: sala.codigo,
     juego: sala.juego,
     fase: sala.fase,
+    anfitrion: sala.jugadores.get(sala.anfitrionId).nombre,
     jugadores: sala.jugadores.size,
     capacidad: REGLAS.JUGADORES_POR_SALA
   }));
@@ -557,7 +585,7 @@ io.on('connection', (socket) => {
           throw error('SALA_LLENA', `La sala ya tiene ${REGLAS.JUGADORES_POR_SALA} jugadores.`);
         }
 
-        const jugador = crearJugador(socket.id, datos);
+        const jugador = crearJugador(socket.id, datos, primerAsientoLibre(sala));
         abandonarSala(socket);
         sala.jugadores.set(jugador.id, jugador);
         socket.data.codigoSala = codigo;
@@ -657,7 +685,7 @@ io.on('connection', (socket) => {
       // estadísticas) cuando exista ese registro; `ronda.apuestas` ya trae
       // jugador, apuesta, opción, resultado y pago.
       io.to(sala.codigo).emit('ronda_iniciada', { numeroRonda: ronda.numeroRonda, juego: ronda.juego });
-      io.to(sala.codigo).emit('resultado', ronda);
+      avisarRonda(sala, 'resultado', ronda);
       difundirEstado(sala);
       return { numeroRonda: ronda.numeroRonda, resultado: ronda.resultado, saldo: jugador.fichas };
     });
@@ -750,6 +778,8 @@ io.on('connection', (socket) => {
     }
 
     io.to(codigo).emit('chat_mensaje', {
+      codigo,
+      jugadorId: jugador.id,
       nombre: jugador.nombre,
       texto,
       hora: new Date().toISOString()

@@ -36,7 +36,7 @@ repositorio usa otro).
 ### Sí incluye
 
 1. Registro ligero de jugador (nombre + avatar, sin contraseña).
-2. Crear sala, entrar con código o enlace, salir y reconectar.
+2. Ver las salas con cupo en el inicio, crear sala, entrar desde el directorio, con código o enlace, salir y reconectar.
 3. Cinco juegos: **Cara o Cruz, Dados, Ruleta, Blackjack/21 y Texas Hold'em**.
 4. Apuestas con fichas virtuales y liquidación automática al final de cada ronda.
 5. Chat de sala con mensajes rápidos.
@@ -51,7 +51,7 @@ repositorio usa otro).
 - Bots que ocupen asientos libres.
 - Torneos, ligas, ranking global, temporadas y misiones.
 - Tragamonedas, jackpots, eventos especiales, colección cosmética o pasaporte.
-- Modo espectador y salas públicas con lista tipo lobby.
+- Modo espectador: el directorio solo permite entrar para ocupar un asiento libre.
 
 ---
 
@@ -77,7 +77,7 @@ lanzamiento y liquidación inmediata para toda la sala.
 | Jugadores por sala | **6 como máximo** (mínimo 1 para que la sala exista) |
 | Mínimo para jugar | 1 en juegos rápidos y blackjack · **2 en Texas Hold'em** |
 | Código de sala | **5 caracteres** alfanuméricos en mayúsculas (ej. `K7Q2M`), único entre salas activas |
-| Acceso | Enlace directo `/sala/K7Q2M` o escribiendo el código en el inicio |
+| Acceso | Desde **Salas abiertas** (juego, anfitrión y ocupación), por enlace `/sala/K7Q2M` o escribiendo el código en el inicio |
 | Juego por sala | **Uno solo**, elegido al crearla; no se cambia con la sala llena |
 | Duración | La sala se elimina automáticamente cuando queda vacía |
 | Estados | `espera` → `apuestas` → `jugando` → `resultados` → (nueva ronda) |

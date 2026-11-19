@@ -1,0 +1,613 @@
+MonteCristo · Ejecución del 18 de noviembre de 2026 (UTC)
+$ npm test
+
+> montecristo@0.1.0 test
+> node --test
+
+TAP version 13
+# Subtest: repartir envía manos privadas solo a los apostadores y destapa la casa al cierre
+ok 1 - repartir envía manos privadas solo a los apostadores y destapa la casa al cierre
+  ---
+  duration_ms: 89.463927
+  type: 'test'
+  ...
+# Subtest: los números conservan su valor y J, Q y K valen 10
+ok 2 - los números conservan su valor y J, Q y K valen 10
+  ---
+  duration_ms: 0.982612
+  type: 'test'
+  ...
+# Subtest: los ases dan el mejor total posible, incluso con varios en la mano
+ok 3 - los ases dan el mejor total posible, incluso con varios en la mano
+  ---
+  duration_ms: 0.181438
+  type: 'test'
+  ...
+# Subtest: reparte en dos vueltas desde un solo mazo barajado, de uno a seis jugadores
+ok 4 - reparte en dos vueltas desde un solo mazo barajado, de uno a seis jugadores
+  ---
+  duration_ms: 4.967426
+  type: 'test'
+  ...
+# Subtest: la vista pública no revela ni sustituye la carta tapada
+ok 5 - la vista pública no revela ni sustituye la carta tapada
+  ---
+  duration_ms: 0.425658
+  type: 'test'
+  ...
+# Subtest: genera cinco caracteres alfanuméricos en mayúsculas, incluso con ceros iniciales
+ok 6 - genera cinco caracteres alfanuméricos en mayúsculas, incluso con ceros iniciales
+  ---
+  duration_ms: 2.32025
+  type: 'test'
+  ...
+# Subtest: descarta códigos de salas activas hasta encontrar uno libre
+ok 7 - descarta códigos de salas activas hasta encontrar uno libre
+  ---
+  duration_ms: 1.854102
+  type: 'test'
+  ...
+# Subtest: si no encuentra un código libre, termina con un error sin repetirlo
+ok 8 - si no encuentra un código libre, termina con un error sin repetirlo
+  ---
+  duration_ms: 1.082575
+  type: 'test'
+  ...
+# Subtest: normaliza un código escrito a mano y rechaza otros formatos
+ok 9 - normaliza un código escrito a mano y rechaza otros formatos
+  ---
+  duration_ms: 0.305429
+  type: 'test'
+  ...
+# Subtest: solo existen dos opciones: cara y cruz
+ok 10 - solo existen dos opciones: cara y cruz
+  ---
+  duration_ms: 1.457289
+  type: 'test'
+  ...
+# Subtest: rechaza cualquier opción que no sea cara o cruz
+ok 11 - rechaza cualquier opción que no sea cara o cruz
+  ---
+  duration_ms: 0.426312
+  type: 'test'
+  ...
+# Subtest: el servidor lanza con su RNG: la mitad baja es cara y la mitad alta es cruz
+ok 12 - el servidor lanza con su RNG: la mitad baja es cara y la mitad alta es cruz
+  ---
+  duration_ms: 0.607216
+  type: 'test'
+  ...
+# Subtest: casos 1 y 2 de DOC-02: acertar paga el doble y fallar paga cero
+ok 13 - casos 1 y 2 de DOC-02: acertar paga el doble y fallar paga cero
+  ---
+  duration_ms: 0.264398
+  type: 'test'
+  ...
+# Subtest: cruz paga igual que cara y los multiplicadores salen de PAGOS
+ok 14 - cruz paga igual que cara y los multiplicadores salen de PAGOS
+  ---
+  duration_ms: 0.177222
+  type: 'test'
+  ...
+# Subtest: no evalúa apuestas ni resultados que no existen
+ok 15 - no evalúa apuestas ni resultados que no existen
+  ---
+  duration_ms: 0.28895
+  type: 'test'
+  ...
+# Subtest: con una semilla nueva por ronda la moneda sigue siendo justa (10 000 rondas)
+ok 16 - con una semilla nueva por ronda la moneda sigue siendo justa (10 000 rondas)
+  ---
+  duration_ms: 16.218097
+  type: 'test'
+  ...
+# ✅ Base de datos conectada: /tmp/montecristo-test-2821.db
+# Subtest: las tablas del modelo existen
+ok 17 - las tablas del modelo existen
+  ---
+  duration_ms: 1.250651
+  type: 'test'
+  ...
+# Subtest: insertos válidos aplican los valores por defecto
+ok 18 - insertos válidos aplican los valores por defecto
+  ---
+  duration_ms: 0.837222
+  type: 'test'
+  ...
+# Subtest: jugadores: saldo_fichas negativo falla por CHECK
+ok 19 - jugadores: saldo_fichas negativo falla por CHECK
+  ---
+  duration_ms: 0.732113
+  type: 'test'
+  ...
+# Subtest: salas: juego inválido falla por CHECK
+ok 20 - salas: juego inválido falla por CHECK
+  ---
+  duration_ms: 0.311879
+  type: 'test'
+  ...
+# Subtest: salas: dos códigos iguales fallan por UNIQUE
+ok 21 - salas: dos códigos iguales fallan por UNIQUE
+  ---
+  duration_ms: 0.420474
+  type: 'test'
+  ...
+# Subtest: apuestas: monto menor a 10 falla por CHECK
+ok 22 - apuestas: monto menor a 10 falla por CHECK
+  ---
+  duration_ms: 0.498577
+  type: 'test'
+  ...
+# Subtest: apuestas: una segunda apuesta del mismo jugador en la misma ronda falla por UNIQUE
+ok 23 - apuestas: una segunda apuesta del mismo jugador en la misma ronda falla por UNIQUE
+  ---
+  duration_ms: 0.620079
+  type: 'test'
+  ...
+# Subtest: con foreign_keys activado: sala con anfitrión inexistente falla
+ok 24 - con foreign_keys activado: sala con anfitrión inexistente falla
+  ---
+  duration_ms: 0.554167
+  type: 'test'
+  ...
+# Subtest: dados: cada lanzamiento paga solo su rango y su número exacto
+ok 25 - dados: cada lanzamiento paga solo su rango y su número exacto
+  ---
+  duration_ms: 1.745816
+  type: 'test'
+  ...
+# Subtest: validación rechaza menos del mínimo, exceso de saldo, decimales y apuesta repetida
+ok 26 - validación rechaza menos del mínimo, exceso de saldo, decimales y apuesta repetida
+  ---
+  duration_ms: 2.872681
+  type: 'test'
+  ...
+# Subtest: casos 1–18 de DOC-02 calculan exactamente pago y neto
+ok 27 - casos 1–18 de DOC-02 calculan exactamente pago y neto
+  ---
+  duration_ms: 0.462006
+  type: 'test'
+  ...
+# Subtest: multiplicadores se obtienen de PAGOS y seguro redondea hacia arriba
+ok 28 - multiplicadores se obtienen de PAGOS y seguro redondea hacia arriba
+  ---
+  duration_ms: 0.178422
+  type: 'test'
+  ...
+# ✅ Base de datos conectada: /tmp/montecristo-historial-2842.db
+# Subtest: la tabla historial_rondas existe con las columnas del historial
+ok 29 - la tabla historial_rondas existe con las columnas del historial
+  ---
+  duration_ms: 1.642697
+  type: 'test'
+  ...
+# Subtest: registra una fila por jugador con apuesta, resultado y fecha
+ok 30 - registra una fila por jugador con apuesta, resultado y fecha
+  ---
+  duration_ms: 2.050533
+  type: 'test'
+  ...
+# Subtest: registrarJugadorEnRonda guarda una sola fila y devuelve su contenido
+ok 31 - registrarJugadorEnRonda guarda una sola fila y devuelve su contenido
+  ---
+  duration_ms: 1.37936
+  type: 'test'
+  ...
+# Subtest: normaliza el código de sala y repetir la ronda no duplica filas
+ok 32 - normaliza el código de sala y repetir la ronda no duplica filas
+  ---
+  duration_ms: 2.704113
+  type: 'test'
+  ...
+# Subtest: avisa si la ronda ya está registrada con otros datos
+ok 33 - avisa si la ronda ya está registrada con otros datos
+  ---
+  duration_ms: 1.356008
+  type: 'test'
+  ...
+# Subtest: es todo o nada: si un jugador falla, no se guarda ninguno
+ok 34 - es todo o nada: si un jugador falla, no se guarda ninguno
+  ---
+  duration_ms: 0.989956
+  type: 'test'
+  ...
+# Subtest: rechaza apuestas por debajo del mínimo (validación y CHECK)
+ok 35 - rechaza apuestas por debajo del mínimo (validación y CHECK)
+  ---
+  duration_ms: 0.576834
+  type: 'test'
+  ...
+# Subtest: rechaza juegos, resultados y montos inválidos (validación y CHECK)
+ok 36 - rechaza juegos, resultados y montos inválidos (validación y CHECK)
+  ---
+  duration_ms: 0.778315
+  type: 'test'
+  ...
+# Subtest: rechaza una ronda sin jugadores, con más de 6 o con jugadores repetidos
+ok 37 - rechaza una ronda sin jugadores, con más de 6 o con jugadores repetidos
+  ---
+  duration_ms: 0.812765
+  type: 'test'
+  ...
+# Subtest: guarda la fecha indicada cuando se quiere reconstruir una ronda
+ok 38 - guarda la fecha indicada cuando se quiere reconstruir una ronda
+  ---
+  duration_ms: 0.835478
+  type: 'test'
+  ...
+# Subtest: la tabla responde el historial y las estadísticas de un jugador
+ok 39 - la tabla responde el historial y las estadísticas de un jugador
+  ---
+  duration_ms: 1.022737
+  type: 'test'
+  ...
+# Subtest: caso 1 de DOC-02: 100 a cara y sale cara → cobra 200 (gana 100)
+ok 40 - caso 1 de DOC-02: 100 a cara y sale cara → cobra 200 (gana 100)
+  ---
+  duration_ms: 2.540264
+  type: 'test'
+  ...
+# Subtest: caso 2 de DOC-02: 100 a cara y sale cruz → pierde lo apostado
+ok 41 - caso 2 de DOC-02: 100 a cara y sale cruz → pierde lo apostado
+  ---
+  duration_ms: 0.413979
+  type: 'test'
+  ...
+# Subtest: una sola moneda para toda la sala: todos se liquidan con el mismo resultado
+ok 42 - una sola moneda para toda la sala: todos se liquidan con el mismo resultado
+  ---
+  duration_ms: 0.548177
+  type: 'test'
+  ...
+# Subtest: ruleta: un único giro con cero paga solo al pleno 0
+ok 43 - ruleta: un único giro con cero paga solo al pleno 0
+  ---
+  duration_ms: 0.775154
+  type: 'test'
+  ...
+# Subtest: no hace falta que haya apuestas en los dos lados, ni que el anfitrión apueste
+ok 44 - no hace falta que haya apuestas en los dos lados, ni que el anfitrión apueste
+  ---
+  duration_ms: 0.392815
+  type: 'test'
+  ...
+# Subtest: solo el anfitrión puede lanzar
+ok 45 - solo el anfitrión puede lanzar
+  ---
+  duration_ms: 0.567595
+  type: 'test'
+  ...
+# Subtest: sin apuestas confirmadas no hay nada que lanzar
+ok 46 - sin apuestas confirmadas no hay nada que lanzar
+  ---
+  duration_ms: 0.31417
+  type: 'test'
+  ...
+# Subtest: solo se lanza con las apuestas abiertas
+ok 47 - solo se lanza con las apuestas abiertas
+  ---
+  duration_ms: 1.734902
+  type: 'test'
+  ...
+# Subtest: dos lanzar seguidos liquidan una sola vez (idempotencia)
+ok 48 - dos lanzar seguidos liquidan una sola vez (idempotencia)
+  ---
+  duration_ms: 0.583037
+  type: 'test'
+  ...
+# Subtest: la ronda es todo o nada: si el lanzamiento falla, la sala queda intacta
+ok 49 - la ronda es todo o nada: si el lanzamiento falla, la sala queda intacta
+  ---
+  duration_ms: 0.790037
+  type: 'test'
+  ...
+# Subtest: la semilla de la ronda queda del lado del servidor y permite repetirla
+ok 50 - la semilla de la ronda queda del lado del servidor y permite repetirla
+  ---
+  duration_ms: 1.007316
+  type: 'test'
+  ...
+# Subtest: nadie puede dictar el resultado: solo cuenta el RNG del servidor
+ok 51 - nadie puede dictar el resultado: solo cuenta el RNG del servidor
+  ---
+  duration_ms: 0.181419
+  type: 'test'
+  ...
+# Subtest: la apuesta de quien ya salió no se liquida ni cuenta para lanzar
+ok 52 - la apuesta de quien ya salió no se liquida ni cuenta para lanzar
+  ---
+  duration_ms: 0.28295
+  type: 'test'
+  ...
+# Subtest: el motor tiene que ser el del juego de la sala
+ok 53 - el motor tiene que ser el del juego de la sala
+  ---
+  duration_ms: 0.246309
+  type: 'test'
+  ...
+# Subtest: ronda completa sobre el motor: espera → apuestas → jugando → resultados → nueva ronda
+ok 54 - ronda completa sobre el motor: espera → apuestas → jugando → resultados → nueva ronda
+  ---
+  duration_ms: 0.436243
+  type: 'test'
+  ...
+# Subtest: 300 rondas seguidas: las fichas siempre cuadran y nadie queda en negativo
+ok 55 - 300 rondas seguidas: las fichas siempre cuadran y nadie queda en negativo
+  ---
+  duration_ms: 13.759479
+  type: 'test'
+  ...
+# Subtest: liquidarApuesta aplica el multiplicador del juego y clasifica gana · pierde · empate
+ok 56 - liquidarApuesta aplica el multiplicador del juego y clasifica gana · pierde · empate
+  ---
+  duration_ms: 0.265058
+  type: 'test'
+  ...
+# Subtest: una apuesta sin liquidar se ve con los campos de pago en null
+ok 57 - una apuesta sin liquidar se ve con los campos de pago en null
+  ---
+  duration_ms: 0.180202
+  type: 'test'
+  ...
+# Subtest: moneda aproximadamente justa con 10 000 intentos
+ok 58 - moneda aproximadamente justa con 10 000 intentos
+  ---
+  duration_ms: 13.4497
+  type: 'test'
+  ...
+# Subtest: dado solo genera enteros del 1 al 6
+ok 59 - dado solo genera enteros del 1 al 6
+  ---
+  duration_ms: 10.415381
+  type: 'test'
+  ...
+# Subtest: ruleta europea devuelve 0–36 y asigna verde al cero
+ok 60 - ruleta europea devuelve 0–36 y asigna verde al cero
+  ---
+  duration_ms: 6.341615
+  type: 'test'
+  ...
+# Subtest: semilla reproduce la secuencia
+ok 61 - semilla reproduce la secuencia
+  ---
+  duration_ms: 0.309937
+  type: 'test'
+  ...
+# Subtest: mazos, cartas sin reposición y umbral de rebarajado
+ok 62 - mazos, cartas sin reposición y umbral de rebarajado
+  ---
+  duration_ms: 0.616322
+  type: 'test'
+  ...
+# Subtest: solo admite transiciones consecutivas de fase
+ok 63 - solo admite transiciones consecutivas de fase
+  ---
+  duration_ms: 0.863886
+  type: 'test'
+  ...
+# Subtest: rechaza acción/transición inválida sin alterar la fase
+ok 64 - rechaza acción/transición inválida sin alterar la fase
+  ---
+  duration_ms: 0.697255
+  type: 'test'
+  ...
+# Subtest: valida host, apuesta confirmada y servidor para progresar
+ok 65 - valida host, apuesta confirmada y servidor para progresar
+  ---
+  duration_ms: 0.207488
+  type: 'test'
+  ...
+# Subtest: inicia con mínimos por juego y abre siguiente ronda limpiando estado
+ok 66 - inicia con mínimos por juego y abre siguiente ronda limpiando estado
+  ---
+  duration_ms: 0.824829
+  type: 'test'
+  ...
+# Subtest: acción permitida depende de fase
+ok 67 - acción permitida depende de fase
+  ---
+  duration_ms: 0.205529
+  type: 'test'
+  ...
+# Subtest: sin identidad nadie pasa por anfitrión
+ok 68 - sin identidad nadie pasa por anfitrión
+  ---
+  duration_ms: 1.577048
+  type: 'test'
+  ...
+# Subtest: la ronda nueva no arrastra el resultado de la anterior
+ok 69 - la ronda nueva no arrastra el resultado de la anterior
+  ---
+  duration_ms: 0.194083
+  type: 'test'
+  ...
+# Subtest: valida y normaliza las cuatro opciones simples y los plenos n:0 a n:36
+ok 70 - valida y normaliza las cuatro opciones simples y los plenos n:0 a n:36
+  ---
+  duration_ms: 1.864451
+  type: 'test'
+  ...
+# Subtest: rechaza opciones fuera del ticket y plenos mal escritos o fuera de rango
+ok 71 - rechaza opciones fuera del ticket y plenos mal escritos o fuera de rango
+  ---
+  duration_ms: 0.280564
+  type: 'test'
+  ...
+# Subtest: el giro del servidor devuelve cualquiera de las 37 casillas con su color europeo
+ok 72 - el giro del servidor devuelve cualquiera de las 37 casillas con su color europeo
+  ---
+  duration_ms: 0.7408
+  type: 'test'
+  ...
+# Subtest: rojo, negro, par e impar pagan ×2 si aciertan y ×0 si fallan
+ok 73 - rojo, negro, par e impar pagan ×2 si aciertan y ×0 si fallan
+  ---
+  duration_ms: 1.968896
+  type: 'test'
+  ...
+# Subtest: el cero hace perder todas las apuestas de color y paridad
+ok 74 - el cero hace perder todas las apuestas de color y paridad
+  ---
+  duration_ms: 0.191295
+  type: 'test'
+  ...
+# Subtest: cada pleno paga ×36 solo al acertar su número, incluidos 0 y 36
+ok 75 - cada pleno paga ×36 solo al acertar su número, incluidos 0 y 36
+  ---
+  duration_ms: 3.797032
+  type: 'test'
+  ...
+# Subtest: no liquida opciones ni números de resultado inválidos
+ok 76 - no liquida opciones ni números de resultado inválidos
+  ---
+  duration_ms: 0.557953
+  type: 'test'
+  ...
+# Subtest: salas activas distintas y un amigo entra solo a la mesa del código compartido
+ok 77 - salas activas distintas y un amigo entra solo a la mesa del código compartido
+  ---
+  duration_ms: 181.637147
+  type: 'test'
+  ...
+# Subtest: una sala llena rechaza a nuevos jugadores, pero no expulsa a quien reenvía el código
+ok 78 - una sala llena rechaza a nuevos jugadores, pero no expulsa a quien reenvía el código
+  ---
+  duration_ms: 198.888577
+  type: 'test'
+  ...
+# Subtest: rechaza un código inválido o el de una sala que ya se vació
+ok 79 - rechaza un código inválido o el de una sala que ya se vació
+  ---
+  duration_ms: 47.316842
+  type: 'test'
+  ...
+# Subtest: el directorio refleja anfitrión y ocupación; una baja libera su asiento, no mueve los demás
+ok 80 - el directorio refleja anfitrión y ocupación; una baja libera su asiento, no mueve los demás
+  ---
+  duration_ms: 171.722407
+  type: 'test'
+  ...
+# Subtest: la mesa no cobra apuestas fuera de fase, inválidas ni repetidas
+ok 81 - la mesa no cobra apuestas fuera de fase, inválidas ni repetidas
+  ---
+  duration_ms: 20.709453
+  type: 'test'
+  ...
+# Subtest: el límite por juego viene de DOC-02 y los juegos rápidos no tienen reloj
+ok 82 - el límite por juego viene de DOC-02 y los juegos rápidos no tienen reloj
+  ---
+  duration_ms: 1.127645
+  type: 'test'
+  ...
+# Subtest: por inactividad el servidor se planta en blackjack y pasa o se retira en póker
+ok 83 - por inactividad el servidor se planta en blackjack y pasa o se retira en póker
+  ---
+  duration_ms: 1.001089
+  type: 'test'
+  ...
+# Subtest: las acciones en español se normalizan y las ajenas al juego se rechazan
+ok 84 - las acciones en español se normalizan y las ajenas al juego se rechazan
+  ---
+  duration_ms: 0.244016
+  type: 'test'
+  ...
+# Subtest: al iniciar el turno avisa con jugador y deadline, y agenda un solo vencimiento
+ok 85 - al iniciar el turno avisa con jugador y deadline, y agenda un solo vencimiento
+  ---
+  duration_ms: 0.683832
+  type: 'test'
+  ...
+# Subtest: si nadie juega, el servidor decide por él y la partida sigue con el siguiente
+ok 86 - si nadie juega, el servidor decide por él y la partida sigue con el siguiente
+  ---
+  duration_ms: 0.651525
+  type: 'test'
+  ...
+# Subtest: la acción a tiempo gana: cancela el reloj y no hay decisión automática
+ok 87 - la acción a tiempo gana: cancela el reloj y no hay decisión automática
+  ---
+  duration_ms: 0.354173
+  type: 'test'
+  ...
+# Subtest: rechaza jugar fuera de turno o una acción que no existe en el juego
+ok 88 - rechaza jugar fuera de turno o una acción que no existe en el juego
+  ---
+  duration_ms: 0.839643
+  type: 'test'
+  ...
+# Subtest: el motor puede vetar una acción con sus propias reglas sin perder el turno
+ok 89 - el motor puede vetar una acción con sus propias reglas sin perder el turno
+  ---
+  duration_ms: 0.346251
+  type: 'test'
+  ...
+# Subtest: una acción que llega después del deadline se rechaza: el servidor ya decidió
+ok 90 - una acción que llega después del deadline se rechaza: el servidor ya decidió
+  ---
+  duration_ms: 0.641804
+  type: 'test'
+  ...
+# Subtest: un temporizador viejo que se dispara tarde no decide nada (idempotencia)
+ok 91 - un temporizador viejo que se dispara tarde no decide nada (idempotencia)
+  ---
+  duration_ms: 0.647078
+  type: 'test'
+  ...
+# Subtest: en póker el reloj pasa sin apuesta pendiente y retira la mano si hay que igualar
+ok 92 - en póker el reloj pasa sin apuesta pendiente y retira la mano si hay que igualar
+  ---
+  duration_ms: 0.381536
+  type: 'test'
+  ...
+# Subtest: si el jugador sale o se desconecta en su turno, el servidor decide y nadie se atoró
+ok 93 - si el jugador sale o se desconecta en su turno, el servidor decide y nadie se atoró
+  ---
+  duration_ms: 0.427664
+  type: 'test'
+  ...
+# Subtest: cancelar detiene el reloj y cierra la puerta a más acciones
+ok 94 - cancelar detiene el reloj y cierra la puerta a más acciones
+  ---
+  duration_ms: 0.345054
+  type: 'test'
+  ...
+# Subtest: un juego sin reloj acepta acciones sin agendar vencimientos
+ok 95 - un juego sin reloj acepta acciones sin agendar vencimientos
+  ---
+  duration_ms: 0.23019
+  type: 'test'
+  ...
+# Subtest: sin jugadores no hay vuelta que iniciar
+ok 96 - sin jugadores no hay vuelta que iniciar
+  ---
+  duration_ms: 0.136121
+  type: 'test'
+  ...
+1..96
+# tests 96
+# suites 0
+# pass 96
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 2243.251577
+
+$ npm run test:e2e
+
+> montecristo@0.1.0 test:e2e
+> playwright test
+
+
+Running 8 tests using 1 worker
+
+  ✓  1 e2e/mesa.spec.js:51:1 › distingue directorio vacío de error de red y permite reintentar (653ms)
+  ✓  2 e2e/mesa.spec.js:60:1 › del directorio a la mesa: asientos, fases, monto, confirmación y saldo insuficiente real (5.8s)
+  ✓  3 e2e/mesa.spec.js:136:1 › una mesa llena desaparece y reaparece al liberarse un asiento con el nuevo anfitrión (5.6s)
+  ✓  4 e2e/mesa.spec.js:168:3 › dice: ofrece sus opciones, acepta la mínima y cierra los controles al jugar (1.3s)
+  ✓  5 e2e/mesa.spec.js:168:3 › roulette: ofrece sus opciones, acepta la mínima y cierra los controles al jugar (1.2s)
+  ✓  6 e2e/mesa.spec.js:168:3 › blackjack: ofrece sus opciones, acepta la mínima y cierra los controles al jugar (1.5s)
+  ✓  7 e2e/mesa.spec.js:168:3 › poker: ofrece sus opciones, acepta la mínima y cierra los controles al jugar (2.1s)
+  ✓  8 e2e/mesa.spec.js:193:1 › si la sala se cierra después de pulsar Entrar, el perfil explica el rechazo (1.5s)
+
+  8 passed (21.8s)

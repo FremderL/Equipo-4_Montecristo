@@ -5,3 +5,7 @@ node_modules/
 data/*.db
 data/*.db-wal
 data/*.db-shm
+
+# Resultados locales de Playwright (las capturas entregadas están en docs/evidencia/)
+test-results/
+playwright-report/
