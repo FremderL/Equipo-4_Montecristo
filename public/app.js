@@ -63,6 +63,8 @@ function cargarSocketIO() {
       socket = window.io();
       socket.on('connect', () => {
         actualizarEstadoConexion('conectado', 'Conectado al servidor');
+        // El directorio de salas se suscribe aquí en vez de sondear la API.
+        window.dispatchEvent(new Event('montecristo:socket-listo'));
       });
       socket.on('bienvenida', (datos) => {
         const mensaje = datos && typeof datos.mensaje === 'string' ? datos.mensaje : String(datos || '');
