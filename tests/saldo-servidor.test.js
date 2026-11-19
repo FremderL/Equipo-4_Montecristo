@@ -113,7 +113,7 @@ test('el mismo navegador recupera sus fichas, incluso si se quedó en cero', asy
 });
 
 for (const [juego, accion] of [['blackjack', 'stand'], ['poker', 'check']]) {
-  test(`guarda el saldo al cerrar una mano de ${juego}, incluso sin pagos de historial`, async (t) => {
+  test(`guarda el saldo al cerrar una mano de ${juego}`, async (t) => {
     const [anfitrion, invitado] = await Promise.all([conectar(t), conectar(t)]);
     const { codigo } = await sentar(anfitrion, 'crear_sala', { ...perfil('Ana'), juego });
     await sentar(invitado, 'entrar_sala', { ...perfil('Bruno'), codigo });
@@ -128,7 +128,15 @@ for (const [juego, accion] of [['blackjack', 'stand'], ['poker', 'check']]) {
 
     const cierre = await pedir(anfitrion, `accion_${juego}`, { accion });
     const guardado = buscarJugadorPorId(anfitrion.id);
-    assert.equal(cierre.saldo, 1000, 'el motor provisional devuelve lo apostado');
+    if (juego === 'blackjack') {
+      // La casa ya juega y paga: con 100 apostadas el saldo depende del desenlace.
+      assert.ok([900, 1000, 1100, 1150].includes(cierre.saldo), `saldo inesperado: ${cierre.saldo}`);
+      const historial = historialDeJugador(anfitrion.id);
+      assert.equal(historial.length, 1, 'la mano liquidada deja su fila en el historial');
+      assert.equal(historial[0].pago, cierre.saldo - 900);
+    } else {
+      assert.equal(cierre.saldo, 1000, 'el motor provisional devuelve lo apostado');
+    }
     assert.equal(guardado.saldo, cierre.saldo);
     assert.notEqual(guardado.ultimaActividad, fechaAnterior, 'SQLite se actualiza al llegar a resultados');
   });
@@ -149,8 +157,10 @@ test('al cambiar de mesa durante una mano, la apuesta abandonada no se reembolsa
   assert.equal(buscarJugadorPorId(ana.id).saldo, 900);
   assert.equal((await sentar(ana, 'entrar_sala', { ...datosAna, codigo })).saldo, 900);
   await pedir(bruno, 'accion_blackjack', { accion: 'stand' });
-  assert.equal(buscarJugadorPorId(ana.id).saldo, 900);
-  assert.equal(buscarJugadorPorId(bruno.id).saldo, 1000);
+  assert.equal(buscarJugadorPorId(ana.id).saldo, 900, 'la abandonada no cobra ni recupera nada');
+  // Bruno jugó contra la casa con 50 apostadas: gana, empata o pierde según la mano.
+  const saldoBruno = buscarJugadorPorId(bruno.id).saldo;
+  assert.ok([950, 1000, 1050, 1075].includes(saldoBruno), `saldo inesperado de Bruno: ${saldoBruno}`);
 
   // También se pierde la apuesta si el abandono provoca el fin de la mano.
   await pedir(bruno, 'nueva_ronda');
