@@ -9,6 +9,7 @@
 //     resultado y paga a toda la sala (Cara o Cruz: ×2 a quien acierta)
 //   - guarda en SQLite el saldo final de cada jugador cuando termina la ronda
 //   - reparte blackjack con un mazo por ronda; solo el dueño recibe su mano y sus puntos
+//   - al cerrar la mano de blackjack la casa pide hasta 17, compara y paga (DOC-02 §6)
 //   - corre el reloj de turno: si el jugador no responde, el servidor decide por él
 //     (blackjack: se planta · póker: pasa si puede, si no se retira) y la partida sigue
 // El servidor es autoritativo: el navegador solo envía intenciones.
@@ -20,6 +21,17 @@ const { Server } = require('socket.io');
 const { REGLAS } = require('./lib/reglas.js');
 const { generarCodigoSala, normalizarCodigoSala } = require('./lib/codigo-sala.js');
 const { FASES, cambiarFase, abrirNuevaRonda, fasePermiteAccion, cancelarTemporizadores, esAnfitrion } = require('./lib/ronda.js');
+const {
+  MAX_SALAS_POR_DEFECTO,
+  ESTADOS_SALA,
+  crearAlmacenSalas,
+  estadoDeSala,
+  resumenDeSala,
+  consultaDeSala,
+  actualizarFaseSala,
+  iniciarSiguienteRonda,
+  normalizarCodigo
+} = require('./lib/salas.js');
 const { validarApuesta } = require('./lib/fichas.js');
 // Ticket 2: crear, buscar y actualizar jugadores pasa SIEMPRE por estas funciones.
 const jugadores = require('./lib/jugadores.js');
@@ -32,8 +44,11 @@ const coinflip = require('./lib/juegos/coinflip.js');
 const roulette = require('./lib/juegos/roulette.js');
 const {
   contarPuntos,
+  sePaso,
   repartirInicial,
   vistaDeCasa,
+  turnoDeCasa,
+  liquidarContraCasa,
   ESTADOS_MANO,
   detalleMano,
   validarAccionJugador,
@@ -153,20 +168,26 @@ function sincronizarSalida(socket, sala, jugador) {
   // Una apuesta abandonada ya no puede cobrar ni reembolsarse. Si la mano
   // sigue abierta, guarda la pérdida antes de que el jugador use otra mesa.
   // Si su salida cerró la mano, el cierre ya guardó su saldo junto al resto.
-  if (sala.fase === FASES.JUGANDO && sala.apuestas.some(
+  if (jugador && sala.fase === FASES.JUGANDO && sala.apuestas.some(
     (apuesta) => apuesta.jugadorId === jugador.id && apuesta.abandonada
   )) {
     guardarSaldos(sala, [jugador]);
   }
-  if (sala.estado === ESTADOS_SALA.ABIERTA) difundirEstado(sala);
+  if (sala.estado === ESTADOS_SALA.ABIERTA) {
+    difundirEstado(sala, 'salida');
+  } else if (sala.estado === ESTADOS_SALA.CERRADA) {
+    // DOC-04 §3.2: la sala se quedó sin nadie; el último en salir se entera.
+    socket.emit('sala_cerrada', { codigo: sala.codigo, motivo: 'sala_vacia' });
+  }
 }
 
 /** Quita al jugador de su sala y la elimina si queda vacía. */
 function abandonarSala(socket) {
-  const { sala, retirado } = salas.salir(socket.id);
-  if (sala) sincronizarSalida(socket, sala, retirado);
+  const salida = salas.salir(socket.id);
+  if (salida.sala) sincronizarSalida(socket, salida.sala, salida.retirado);
   else if (socket.data.codigoSala) socket.leave(socket.data.codigoSala);
   socket.data.codigoSala = null;
+  return salida;
 }
 
 // ---------------------------------------------------------------------------
@@ -296,9 +317,41 @@ function ejecutarAccionDeTurno(sala, jugadorId, accion, extra = {}) {
 }
 
 /**
- * Devuelve lo apostado mientras no exista liquidación.
- * PUNTO DE EXTENSIÓN: el motor de blackjack (mano de la casa) y el de póker
- * (showdown y botes) sustituirán esta devolución por el pago real de DOC-02.
+ * Cierre de una mano de blackjack (DOC-02 §6): la casa juega su turno (pide
+ * hasta llegar a 17), se comparan las manos y se paga cada apuesta pendiente
+ * con su multiplicador (natural ×2,5 · victoria ×2 · empate ×1 · derrota ×0).
+ *
+ * La casa solo roba si queda alguien en pie: si todos se pasaron de 21, su
+ * mano se destapa tal cual vino del reparto. Quien ya perdió por bust no se
+ * paga dos veces y quien abandonó en juego no cobra nada.
+ */
+function liquidarBlackjack(sala) {
+  const partida = sala.blackjack;
+  const manos = partida.manos instanceof Map ? partida.manos : new Map();
+  const enPie = sala.apuestas.some((apuesta) => !apuesta.resultado
+    && !apuesta.abandonada
+    && sala.jugadores.has(apuesta.jugadorId)
+    && manos.has(apuesta.jugadorId)
+    && !sePaso(manos.get(apuesta.jugadorId)));
+  if (enPie) turnoDeCasa(partida);
+
+  for (const apuesta of sala.apuestas) {
+    if (apuesta.resultado !== undefined && apuesta.resultado !== null) continue;
+    if (apuesta.abandonada) continue;
+    const jugador = sala.jugadores.get(apuesta.jugadorId);
+    if (!jugador || !manos.has(apuesta.jugadorId)) continue;
+    liquidarContraCasa(apuesta, manos.get(apuesta.jugadorId), partida.casa);
+    jugador.fichas += apuesta.pago;
+  }
+  sala.bote = 0;
+  sala.apuestaActual = 0;
+  sala.puestas = {};
+}
+
+/**
+ * Devuelve lo apostado mientras no exista liquidación (póker, provisional).
+ * PUNTO DE EXTENSIÓN: el motor de póker (showdown y botes) sustituirá esta
+ * devolución por el pago real de DOC-02.
  */
 function devolverApuestas(sala) {
   for (const apuesta of sala.apuestas) {
@@ -370,12 +423,40 @@ function guardarRondaTerminada(sala) {
   registrarHistorial(sala);
 }
 
-/** Todos resolvieron su turno: se cierra la mano y la sala pasa a resultados. */
+/**
+ * Evento `resultado` de blackjack (DOC-04 §3.3): qué sacó la casa y, por cada
+ * apuesta liquidada, cuánto pagó y si se ganó, perdió o empató.
+ */
+function resultadoDeBlackjack(sala) {
+  const partida = sala.blackjack;
+  return {
+    juego: 'blackjack',
+    numeroRonda: sala.numero_ronda,
+    resultado: { casa: vistaDeCasa(partida.casa, true) },
+    apuestas: sala.apuestas
+      .filter((apuesta) => typeof apuesta.resultado === 'string')
+      .map((apuesta) => ({
+        jugadorId: apuesta.jugadorId,
+        nombre: apuesta.nombre,
+        monto: apuesta.monto,
+        opcion: apuesta.opcion,
+        multiplicador: apuesta.multiplicador,
+        pago: apuesta.pago,
+        neto: apuesta.neto,
+        resultado: apuesta.resultado
+      }))
+  };
+}
+
+/** Todos resolvieron su turno: juega la casa, se liquida y la sala pasa a resultados. */
 function cerrarMano(sala, motivo) {
   if (sala.fase === FASES.JUGANDO) {
-    devolverApuestas(sala);
+    const esBlackjack = sala.juego === 'blackjack' && Boolean(sala.blackjack);
+    if (esBlackjack) liquidarBlackjack(sala);
+    else devolverApuestas(sala);
     actualizarFaseSala(sala, FASES.RESULTADOS, { servidor: true });
     guardarRondaTerminada(sala);
+    if (esBlackjack) io.to(sala.codigo).emit('resultado', resultadoDeBlackjack(sala));
   }
   io.to(sala.codigo).emit('turno', turnoSinJugador(sala, motivo || 'mano_cerrada'));
   difundirEstado(sala, 'resultado');

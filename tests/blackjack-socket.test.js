@@ -5,7 +5,7 @@ const { once } = require('node:events');
 const { io: conectar } = require('socket.io-client');
 const { servidor, io } = require('../server.js');
 const { REGLAS } = require('../lib/reglas.js');
-const { contarPuntos } = require('../lib/juegos/blackjack.js');
+const { contarPuntos, compararConCasa } = require('../lib/juegos/blackjack.js');
 
 let url;
 
@@ -91,11 +91,12 @@ test('repartir envía manos privadas solo a los apostadores y destapa la casa al
   const alCierre = esperarEstado(host, 'resultados');
   for (const socket of [ana, bruno]) await enviar(socket, 'accion_blackjack', { accion: 'stand' });
   const { casa } = await alCierre;
-  assert.equal(casa.cartas.length, 2);
+  assert.ok(casa.cartas.length >= 2, 'la casa juega su mano al cierre');
   assert.equal(casa.cartas[0], visible);
   assert.equal(casa.puntos, contarPuntos(casa.cartas));
-  assert.equal(new Set([...casa.cartas, ...cartasJugadores]).size, 6);
-  for (const carta of [casa.cartas[1], ...cartasJugadores]) {
+  assert.ok(casa.puntos >= 17, 'la casa se planta con 17 o más (o se pasa)');
+  assert.equal(new Set([...casa.cartas, ...cartasJugadores]).size, casa.cartas.length + cartasJugadores.length);
+  for (const carta of [...casa.cartas.slice(1), ...cartasJugadores]) {
     assert.ok(!antesDelCierre.includes(JSON.stringify(carta)), 'ni la tapada ni las manos privadas viajaron a la sala');
   }
 
@@ -271,4 +272,88 @@ test('pedir carta sin pasarse permite seguir jugando y luego plantarse; si el ú
 
   assert.equal(proboPedirYPlantarse, true, 'probó pedir carta sin pasarse y plantarse');
   assert.equal(proboPasarseUnica, true, 'probó pasarse de 21 siendo la única jugadora');
+});
+
+test('al plantarse todos, la casa juega hasta 17 y paga según la comparación', { timeout: 10000 }, async (t) => {
+  const [host, ana, bruno] = await abrirClientes(t, 3);
+  const manos = new Map();
+  for (const socket of [ana, bruno]) {
+    socket.on('cartas', (mano) => manos.set(socket.id, mano));
+  }
+
+  const { codigo } = await enviar(host, 'crear_sala', { nombre: 'Host', avatar: '🙂', juego: 'blackjack' });
+  await enviar(ana, 'entrar_sala', { codigo, nombre: 'Ana', avatar: '🦊' });
+  await enviar(bruno, 'entrar_sala', { codigo, nombre: 'Bruno', avatar: '🐼' });
+  await enviar(host, 'comenzar');
+  await enviar(ana, 'apostar', { monto: 100, opcion: 'mano' });
+  await enviar(bruno, 'apostar', { monto: 50, opcion: 'mano' });
+  await enviar(host, 'repartir');
+
+  const alCierre = esperarEstado(host, 'resultados');
+  const alResultado = once(host, 'resultado');
+  await enviar(ana, 'accion_blackjack', { accion: 'stand' });
+  await enviar(bruno, 'accion_blackjack', { accion: 'stand' });
+  const estadoFinal = await alCierre;
+  const [resultadoPublico] = await alResultado;
+
+  // DOC-04 §3.3: el evento `resultado` trae la casa destapada y el pago de cada apuesta.
+  assert.equal(resultadoPublico.juego, 'blackjack');
+  assert.equal(resultadoPublico.numeroRonda, estadoFinal.numeroRonda);
+  assert.deepEqual(resultadoPublico.resultado.casa, estadoFinal.casa);
+  assert.deepEqual(
+    resultadoPublico.apuestas.map((apuesta) => [apuesta.nombre, apuesta.resultado]),
+    estadoFinal.apuestas.map((apuesta) => [apuesta.nombre, apuesta.resultado])
+  );
+  for (const apuesta of resultadoPublico.apuestas) {
+    assert.deepEqual(Object.keys(apuesta).sort(), [
+      'jugadorId', 'monto', 'multiplicador', 'neto', 'nombre', 'opcion', 'pago', 'resultado'
+    ]);
+  }
+
+  // La casa jugó su turno: se plantó con 17 o más (o se pasó) y se destapó.
+  assert.ok(estadoFinal.casa.cartas.length >= 2);
+  assert.ok(estadoFinal.casa.puntos >= 17);
+  assert.equal(estadoFinal.casa.puntos, contarPuntos(estadoFinal.casa.cartas));
+
+  // Cada apuesta se pagó exactamente según la comparación de las manos.
+  for (const [socket, monto] of [[ana, 100], [bruno, 50]]) {
+    const mano = manos.get(socket.id);
+    const esperado = compararConCasa(mano.cartas, estadoFinal.casa.cartas);
+    const apuesta = estadoFinal.apuestas.find((candidata) => candidata.jugadorId === socket.id);
+    assert.equal(apuesta.resultado, esperado.resultado);
+    assert.equal(apuesta.multiplicador, esperado.multiplicador);
+    assert.equal(apuesta.pago, Math.floor(monto * esperado.multiplicador));
+    assert.equal(apuesta.neto, apuesta.pago - monto);
+    const jugador = estadoFinal.jugadores.find((candidato) => candidato.id === socket.id);
+    assert.equal(jugador.fichas, REGLAS.SALDO_INICIAL - monto + apuesta.pago);
+  }
+});
+
+test('si el único jugador se pasa, la casa no roba y la apuesta ya quedó liquidada', { timeout: 10000 }, async (t) => {
+  const [ana] = await abrirClientes(t, 1);
+
+  await enviar(ana, 'crear_sala', { nombre: 'Ana', avatar: '🦊', juego: 'blackjack' });
+  await enviar(ana, 'comenzar');
+  await enviar(ana, 'apostar', { monto: 20, opcion: 'mano' });
+  await enviar(ana, 'repartir');
+
+  const alCierre = esperarEstado(ana, 'resultados');
+  let ultima;
+  do {
+    ultima = await enviar(ana, 'accion_blackjack', { accion: 'hit' });
+  } while (!ultima.pasado);
+  const estadoFinal = await alCierre;
+
+  assert.equal(estadoFinal.casa.cartas.length, 2, 'sin nadie en pie, la casa no juega su turno');
+  assert.deepEqual(estadoFinal.apuestas[0], {
+    jugadorId: ana.id,
+    nombre: 'Ana',
+    monto: 20,
+    opcion: 'mano',
+    multiplicador: 0,
+    pago: 0,
+    neto: -20,
+    resultado: 'pierde'
+  });
+  assert.equal(estadoFinal.jugadores[0].fichas, REGLAS.SALDO_INICIAL - 20);
 });
