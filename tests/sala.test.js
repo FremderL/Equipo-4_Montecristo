@@ -485,6 +485,7 @@ test('estadoDeSala, resumenDeSala y consultaDeSala reflejan la sala sin filtrar 
     juego: 'blackjack',
     fase: FASES.ESPERA,
     anfitrionId: 'ana',
+    anfitrion: 'Ana',
     jugadores: 2,
     capacidad: 6,
     asientosLibres: 4

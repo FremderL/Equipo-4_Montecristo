@@ -6,6 +6,11 @@
   <meta name="description" content="Elige tu nombre y avatar para jugar en MonteCristo.">
   <title>Tu perfil · MonteCristo</title>
   <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="mesas.css">
+  <script src="juegos-ui.js" defer></script>
+  <script src="ronda-ui.js" defer></script>
+  <script src="chat-mesa.js" defer></script>
+  <script src="mesa.js" defer></script>
   <script src="app.js" defer></script>
 </head>
 <body data-pagina="perfil">
@@ -14,10 +19,10 @@
       <div class="contenedor cabecera__interior">
         <a class="marca" href="index.html" aria-label="MonteCristo, página de inicio">
           <span class="marca__sello" aria-hidden="true">M</span>
-          <span>MonteCristo</span>
+          <span class="marca__nombre">MonteCristo<small>Casino social</small></span>
         </a>
         <div class="cabecera__acciones">
-          <span class="badge badge--dorado">Tu perfil de jugador</span>
+          <span class="badge badge--dorado" id="contexto-pagina">Tu perfil de jugador</span>
           <div class="estado-conexion" id="estado-conexion" data-estado="conectando" role="status" aria-live="polite">
             <span class="estado-conexion__punto" aria-hidden="true"></span>
             <span class="estado-conexion__texto">Conectando…</span>
@@ -27,108 +32,186 @@
     </header>
 
     <main class="contenedor contenido contenido--perfil" id="contenido">
-      <div class="perfil-encabezado">
-        <a class="enlace-retorno" href="index.html"><span aria-hidden="true">←</span> Volver al inicio</a>
-        <div class="perfil-encabezado__meta">
-          <span class="badge badge--menta">Un paso más</span>
-          <span class="badge">Sin contraseña ni cuenta</span>
+      <div id="vista-perfil">
+        <div class="perfil-encabezado">
+          <a class="enlace-retorno" href="index.html"><span aria-hidden="true">←</span> Volver al inicio</a>
+          <div class="perfil-encabezado__meta">
+            <span class="badge badge--menta">Un paso más</span>
+            <span class="badge">Sin contraseña ni cuenta</span>
+          </div>
+          <h1 id="titulo-perfil">Tu nombre, tu avatar</h1>
+          <p class="perfil-encabezado__descripcion" id="texto-intencion">Así te verá tu grupo en la mesa. Tus datos se guardan en este navegador para la próxima partida.</p>
         </div>
-        <h1 id="titulo-perfil">Tu nombre, tu avatar</h1>
-        <p class="perfil-encabezado__descripcion" id="texto-intencion">Así te verá tu grupo en la mesa. Tus datos se guardan en este navegador para la próxima partida.</p>
-      </div>
 
-      <section class="perfil-grid" aria-labelledby="titulo-perfil">
-        <article class="tarjeta perfil-form-card">
-          <form class="perfil-form" id="formulario-perfil" action="perfil.html" method="get" novalidate>
-            <div class="campo campo--nombre">
-              <label for="nombre-jugador">Nombre de jugador</label>
-              <input
-                id="nombre-jugador"
-                name="nombre"
-                type="text"
-                maxlength="24"
-                minlength="1"
-                autocomplete="nickname"
-                placeholder="¿Cómo te llamamos?"
-                aria-describedby="ayuda-nombre error-nombre"
-                required
-              >
-              <span class="campo__ayuda" id="ayuda-nombre">Hasta 24 caracteres; sin espacios al principio ni al final. <span id="contador-nombre">0</span>/24</span>
-              <span class="campo__error" id="error-nombre" role="alert" hidden></span>
-            </div>
+        <section class="perfil-grid" aria-labelledby="titulo-perfil">
+          <article class="tarjeta perfil-form-card">
+            <form class="perfil-form" id="formulario-perfil" action="perfil.html" method="get" novalidate>
+              <div class="campo campo--nombre">
+                <label for="nombre-jugador">Nombre de jugador</label>
+                <input
+                  id="nombre-jugador"
+                  name="nombre"
+                  type="text"
+                  maxlength="24"
+                  minlength="1"
+                  autocomplete="nickname"
+                  placeholder="¿Cómo te llamamos?"
+                  aria-describedby="ayuda-nombre error-nombre"
+                  required
+                >
+                <span class="campo__ayuda" id="ayuda-nombre">Hasta 24 caracteres; sin espacios al principio ni al final. <span id="contador-nombre">0</span>/24</span>
+                <span class="campo__error" id="error-nombre" role="alert" hidden></span>
+              </div>
 
-            <fieldset class="grupo-avatar">
-              <legend>Elige tu avatar</legend>
-              <p class="grupo-avatar__ayuda" id="ayuda-avatar">Selecciona uno de estos ocho avatares. Puedes recorrerlos con las flechas del teclado.</p>
-              <div class="selector-avatar" id="selector-avatar" role="radiogroup" aria-label="Avatares disponibles" aria-describedby="ayuda-avatar"></div>
-            </fieldset>
+              <fieldset class="grupo-avatar">
+                <legend>Elige tu avatar</legend>
+                <p class="grupo-avatar__ayuda" id="ayuda-avatar">Selecciona uno de estos ocho avatares. Puedes recorrerlos con las flechas del teclado.</p>
+                <div class="selector-avatar" id="selector-avatar" role="radiogroup" aria-label="Avatares disponibles" aria-describedby="ayuda-avatar"></div>
+              </fieldset>
 
-            <div class="campo" id="campo-juego">
-              <label for="juego-sala">Juego de la sala</label>
-              <select id="juego-sala" name="juego" required aria-describedby="ayuda-juego">
-                <option value="" selected disabled>Elige un juego</option>
-                <option value="coinflip">Cara o Cruz</option>
-                <option value="dice">Dados</option>
-                <option value="roulette">Ruleta europea</option>
-                <option value="blackjack">Blackjack / 21</option>
-                <option value="poker">Texas Hold’em</option>
-              </select>
-              <span class="campo__ayuda" id="ayuda-juego">Todas las personas de la sala jugarán este mismo juego.</span>
-            </div>
+              <div class="campo" id="campo-juego">
+                <label for="juego-sala">Juego de la sala</label>
+                <select id="juego-sala" name="juego" required aria-describedby="ayuda-juego">
+                  <option value="" selected disabled>Elige un juego</option>
+                  <option value="coinflip">Cara o Cruz</option>
+                  <option value="dice">Dados</option>
+                  <option value="roulette">Ruleta europea</option>
+                  <option value="blackjack">Blackjack / 21</option>
+                  <option value="poker">Texas Hold’em</option>
+                </select>
+                <span class="campo__ayuda" id="ayuda-juego">Todas las personas de la sala jugarán este mismo juego.</span>
+              </div>
 
-            <p class="aviso" id="resumen-codigo" hidden></p>
-            <p class="aviso aviso--peligro mensaje" id="error-perfil" role="alert" aria-live="assertive" hidden></p>
+              <p class="aviso" id="resumen-codigo" hidden></p>
+              <p class="aviso aviso--peligro mensaje" id="error-perfil" role="alert" aria-live="assertive" hidden></p>
 
-            <hr class="perfil-form__separador">
+              <hr class="perfil-form__separador">
 
-            <div class="perfil-card__acciones">
-              <button class="btn btn--primario btn--grande" id="boton-continuar" type="submit">Crear sala</button>
-              <a class="btn btn--fantasma" href="index.html">Cancelar</a>
-            </div>
-          </form>
-        </article>
-
-        <aside class="perfil-aside" aria-label="Vista previa del perfil">
-          <article class="tarjeta perfil-preview">
-            <div class="perfil-preview__cabecera">
-              <p class="eyebrow"><span class="eyebrow__marca" aria-hidden="true"></span> Así aparecerás</p>
-              <span class="badge badge--dorado">Jugador</span>
-            </div>
-            <div class="perfil-preview__avatar" id="vista-avatar" aria-hidden="true">🙂</div>
-            <h2 class="perfil-preview__nombre" id="vista-nombre">Tu nombre</h2>
-            <p class="perfil-preview__detalle">Tu nombre y avatar se mostrarán en la sala.</p>
-            <div class="perfil-preview__pie">
-              <span class="badge badge--menta" id="vista-juego">Elige un juego</span>
-            </div>
+              <div class="perfil-card__acciones">
+                <button class="btn btn--primario btn--grande" id="boton-continuar" type="submit">Crear sala</button>
+                <a class="btn btn--fantasma" href="index.html">Cancelar</a>
+              </div>
+            </form>
           </article>
 
-          <div class="tarjeta perfil-nota">
-            <h2>Tu saldo es virtual</h2>
-            <p>Las fichas solo sirven para jugar con tu grupo en MonteCristo. No se compran, no se venden y no se canjean.</p>
-          </div>
+          <aside class="perfil-aside" aria-label="Vista previa del perfil">
+            <article class="tarjeta perfil-preview">
+              <div class="perfil-preview__cabecera">
+                <p class="eyebrow"><span class="eyebrow__marca" aria-hidden="true"></span> Así aparecerás</p>
+                <span class="badge badge--dorado">Jugador</span>
+              </div>
+              <div class="perfil-preview__avatar" id="vista-avatar" aria-hidden="true">🙂</div>
+              <h2 class="perfil-preview__nombre" id="vista-nombre">Tu nombre</h2>
+              <p class="perfil-preview__detalle">Tu nombre y avatar se mostrarán en la sala.</p>
+              <div class="perfil-preview__pie">
+                <span class="badge badge--menta" id="vista-juego">Elige un juego</span>
+              </div>
+            </article>
 
-          <div class="estado-conexion" id="estado-conexion-secundario" data-estado="conectando" role="status" aria-live="polite">
-            <span class="estado-conexion__punto" aria-hidden="true"></span>
-            <span class="estado-conexion__texto">Conectando…</span>
-          </div>
-        </aside>
-      </section>
+            <div class="tarjeta perfil-nota">
+              <h2>Tu saldo es virtual</h2>
+              <p>Las fichas solo sirven para jugar con tu grupo en MonteCristo. No se compran, no se venden y no se canjean.</p>
+            </div>
 
-      <section class="aviso aviso--exito sala-lista" id="sala-lista" aria-labelledby="titulo-sala-lista" tabindex="-1" hidden>
-        <div class="sala-lista__interior">
-          <div class="sala-lista__texto">
-            <strong id="titulo-sala-lista">Sala lista</strong>
-            <p>Tus amigos pueden entrar con este código desde el inicio:</p>
-            <span class="sala-lista__codigo" id="codigo-creado"></span>
-          </div>
-          <div class="perfil-card__acciones">
-            <button class="btn btn--dorado" id="copiar-codigo" type="button">Copiar código</button>
-            <a class="btn btn--fantasma" id="enlace-sala" target="_blank" rel="noopener">Enlace de invitación</a>
+            <div class="estado-conexion" id="estado-conexion-secundario" data-estado="conectando" role="status" aria-live="polite">
+              <span class="estado-conexion__punto" aria-hidden="true"></span>
+              <span class="estado-conexion__texto">Conectando…</span>
+            </div>
+          </aside>
+        </section>
+      </div>
+
+      <section id="vista-mesa" aria-labelledby="titulo-mesa" hidden>
+        <div class="mesa-encabezado">
+          <div><p class="rotulo"><span class="trazo" aria-hidden="true"></span> Mesa de juego</p><h1 id="titulo-mesa" tabindex="-1"></h1></div>
+          <div class="mesa-acceso">
+            <span class="rotulo">Sala <b id="codigo-creado"></b></span>
+            <button id="copiar-codigo" class="btn btn--fantasma btn--corto" type="button"><svg class="icono" aria-hidden="true"><use href="assets/mesa-iconos.svg#copiar"/></svg> Copiar código</button>
+            <a id="enlace-sala" target="_blank" rel="noopener">Enlace de invitación</a>
           </div>
         </div>
-        <p class="sala-lista__estado-copia" id="estado-copia" role="status"></p>
-        <p class="sala-lista__ocupacion" id="ocupacion-sala" role="status"></p>
-        <ul class="sala-lista__jugadores" id="jugadores-sala" role="list" aria-label="Jugadores en la sala"></ul>
+        <p id="estado-copia" role="status"></p>
+        <div class="mesa-layout">
+          <section class="tablero" aria-label="Área de juego">
+            <div class="tablero__cabecera">
+              <span class="ronda-tag" id="numero-ronda"></span>
+              <span class="ocupacion"><svg class="icono" aria-hidden="true"><use href="assets/mesa-iconos.svg#jugadores"/></svg><span id="ocupacion-sala"></span></span>
+            </div>
+            <div class="pano">
+              <ol class="asientos" id="asientos" aria-label="Asientos de la mesa"></ol>
+              <div class="centro-juego">
+                <svg class="centro-juego__emblema" id="emblema-espera" aria-hidden="true"><use id="emblema-juego"/></svg>
+                <div class="pieza-resultado" id="pieza-resultado" aria-hidden="true" hidden></div>
+                <div role="status" aria-atomic="true" aria-label="Aviso del servidor">
+                  <p class="rotulo rotulo--oro" id="fase-mesa"></p>
+                  <h2 id="estado-ronda" tabindex="-1"></h2>
+                  <p id="detalle-ronda"></p>
+                </div>
+                <button type="button" id="saltar-animacion" class="saltar-animacion" aria-keyshortcuts="Escape" hidden>Saltar animación <kbd aria-hidden="true">Esc</kbd></button>
+              </div>
+            </div>
+            <p id="aviso-automatico" class="aviso-automatico" role="status" hidden></p>
+            <div id="cartas-mesa" class="cartas-mesa" hidden></div>
+            <div class="tablero__pie">
+              <div><p class="rotulo">Anfitrión de la mesa</p><strong id="anfitrion-mesa"></strong></div>
+              <button class="btn btn--mesa" id="accion-ronda" type="button" hidden></button>
+              <span id="nota-ronda" class="nota-ronda"></span>
+            </div>
+          </section>
+          <aside class="caja-apuesta" aria-label="Panel del jugador">
+            <div class="saldo-panel">
+              <div><p class="rotulo rotulo--oro">Tu saldo disponible</p><p class="saldo" role="status"><strong id="saldo-jugador">—</strong> fichas</p></div>
+              <svg aria-hidden="true"><use href="assets/mesa-iconos.svg#ficha"/></svg>
+            </div>
+            <div class="panel-tabs" role="tablist" aria-label="Panel del jugador">
+              <button role="tab" id="tab-juego" type="button" aria-controls="panel-juego" aria-selected="true"><svg class="icono" aria-hidden="true"><use href="assets/mesa-iconos.svg#ficha"/></svg><span id="etiqueta-tab-juego">Apuesta</span></button>
+              <button role="tab" id="tab-chat" type="button" aria-controls="panel-chat" aria-selected="false" tabindex="-1"><svg class="icono" aria-hidden="true"><use href="assets/mesa-iconos.svg#chat"/></svg>Chat de sala <span id="no-leidos" hidden></span></button>
+            </div>
+            <div id="panel-juego" role="tabpanel" aria-labelledby="tab-juego" tabindex="0">
+              <form id="formulario-apuesta" novalidate>
+                <h2 id="titulo-apuesta">Tu apuesta</h2>
+                <fieldset id="controles-apuesta" disabled>
+                  <legend class="sr-only">Elegir y confirmar apuesta</legend>
+                  <div class="campo"><label for="opcion-apuesta">Opción de juego</label><select id="opcion-apuesta" required></select></div>
+                  <div class="campo"><label for="monto-apuesta">Monto en fichas</label><input type="number" inputmode="numeric" id="monto-apuesta" step="1" aria-describedby="ayuda-apuesta" required></div>
+                  <div class="montos-rapidos" role="group" aria-label="Montos rápidos">
+                    <button type="button" data-monto="10">10</button><button type="button" data-monto="50">50</button><button type="button" data-monto="100">100</button><button type="button" data-monto="max">Máx.</button>
+                  </div>
+                  <button class="btn btn--primario" id="confirmar-apuesta" type="submit" disabled><span id="texto-confirmar">Confirmar apuesta</span><span id="icono-confirmar" aria-hidden="true">→</span></button>
+                </fieldset>
+                <p id="ayuda-apuesta" role="status"></p>
+              </form>
+              <section id="balance-ronda" class="balance-ronda" aria-labelledby="titulo-balance" hidden>
+                <p class="rotulo"><span class="trazo" aria-hidden="true"></span> Acta de la mesa</p>
+                <h2 id="titulo-balance">Balance de la ronda</h2>
+                <p id="nota-balance" class="nota-balance"></p>
+                <table class="tabla-balance" aria-labelledby="titulo-balance">
+                  <thead><tr><th scope="col">Jugador</th><th scope="col">Pago</th><th scope="col">Neto</th></tr></thead>
+                  <tbody id="filas-balance"></tbody>
+                </table>
+                <p class="sello-acta"><span aria-hidden="true">✓</span> Cifras del servidor · Fichas virtuales</p>
+              </section>
+            </div>
+            <section id="panel-chat" role="tabpanel" aria-labelledby="tab-chat" hidden>
+              <div class="chat-cabecera"><h2>Conversación</h2><span class="canal-sala"><i aria-hidden="true"></i> Solo esta sala</span></div>
+              <div class="chat-registro" id="registro-chat" role="log" aria-label="Mensajes de la sala" aria-live="polite" aria-relevant="additions" tabindex="0">
+                <div class="chat-vacio" id="chat-vacio">
+                  <svg class="icono" aria-hidden="true"><use href="assets/mesa-iconos.svg#chat"/></svg>
+                  <strong>Abre la conversación</strong><span>Tu mensaje llegará a quienes están en esta mesa.</span>
+                </div>
+                <ol id="mensajes-chat"></ol>
+              </div>
+              <form id="formulario-chat">
+                <label for="texto-chat" class="sr-only">Mensaje para la sala</label>
+                <div class="chat-compositor"><input id="texto-chat" type="text" maxlength="200" placeholder="Escribe a tu sala…" autocomplete="off" aria-describedby="ayuda-chat"><button id="enviar-chat" type="submit" aria-label="Enviar mensaje" disabled><svg class="icono" aria-hidden="true"><use href="assets/mesa-iconos.svg#enviar"/></svg></button></div>
+                <div class="chat-pie"><span id="ayuda-chat"><kbd>Enter</kbd> para enviar</span><span id="contador-chat">0/200</span></div>
+                <p id="error-chat" class="campo__error" role="alert" hidden></p>
+              </form>
+            </section>
+          </aside>
+        </div>
+        <p class="aviso aviso--peligro mensaje" id="error-mesa" role="alert" hidden></p>
+        <a class="salir-mesa" href="index.html#salas-abiertas"><svg class="icono" aria-hidden="true"><use href="assets/mesa-iconos.svg#salir"/></svg> Salir al salón</a>
       </section>
     </main>
 

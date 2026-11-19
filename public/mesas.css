@@ -1,0 +1,236 @@
+/* El salón y el paño comparten señalética: oro para la mesa, menta para las acciones. */
+:root {
+  --paño: #10392e;
+  --oro-mesa: #ecc783;
+  --papel: #f5f0e6;
+  --tinta-salon: #101817;
+  --panel-salon: #19221f;
+  --linea-salon: #35413b;
+  --gris-salon: #adbbb3;
+  --serif: Georgia, 'Times New Roman', serif;
+}
+body { background: radial-gradient(ellipse at 88% 0, #1c2921 0, transparent 42%), var(--tinta-salon); }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.cabecera { padding: 16px 0; border-bottom: 1px solid #ffffff13; }
+.marca { color: var(--papel); }
+.marca__sello {
+  width: 38px; height: 38px; border: 1px solid #c7a666; border-radius: 50%;
+  background: #243327; color: var(--oro-mesa); box-shadow: inset 0 0 0 3px #101a15, inset 0 0 0 4px #8b764e;
+  font: italic 22px var(--serif);
+}
+.marca__nombre { font: 600 23px/.95 var(--serif); letter-spacing: -.045em; }
+.marca__nombre small { display: block; margin-top: 6px; font: 650 8px/1 var(--fuente); letter-spacing: .3em; text-transform: uppercase; color: #c7b793; }
+.nav-salon { display: flex; gap: 24px; margin-right: 16px; }
+.nav-salon a { text-decoration: none; font-size: 14px; font-weight: 600; color: var(--gris-salon); }
+.nav-salon a:hover, .mesa-acceso a:hover, .salir-mesa:hover { color: var(--oro-mesa); }
+.estado-conexion { background: #15241e; color: #c1d2c6; border-color: #35473b; font-weight: 550; }
+.rotulo { color: #a7c8b5; font: 700 10px/1.4 var(--fuente); letter-spacing: .16em; text-transform: uppercase; }
+.rotulo--oro { color: var(--oro-mesa); }
+.trazo { display: inline-block; width: 23px; height: 1px; margin: 0 6px 3px 0; background: var(--oro-mesa); }
+.icono, .directorio__icono, .centro-juego__emblema, .saldo-panel svg {
+  flex: none; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round;
+}
+.icono { width: 17px; height: 17px; }
+.btn--corto { min-height: 37px; padding: 8px 14px; font-size: 13px; }
+body[data-pagina='inicio'] .contenido { padding-top: 28px; }
+.portada {
+  position: relative; isolation: isolate; overflow: hidden; border-radius: var(--radio-grande);
+  border: 1px solid #5c553e; background: #0e1814 url('assets/casino-hero.jpg') no-repeat right 46% / 84% auto;
+}
+.portada::before { position: absolute; z-index: -1; inset: 0; content: ''; background: linear-gradient(90deg, #111d18 5%, #111d18f5 29%, #101c17a8 52%, #060c0b20 82%); }
+.portada::after { position: absolute; pointer-events: none; inset: 8px; content: ''; border: 1px solid #d4b16b31; border-radius: 10px; }
+.portada__texto { max-width: 690px; padding: 30px 40px 33px; }
+.portada__texto .rotulo span { padding-right: 5px; }
+.portada h1, .directorio h2, .mesa-encabezado h1, .caja-apuesta h2, .centro-juego h2 { color: var(--papel); font: 500 40px/1.12 var(--serif); letter-spacing: -.04em; }
+.portada h1 { margin: 9px 0; font-size: clamp(46px, 4.7vw, 66px); }
+.portada h1 em { color: var(--oro-mesa); }
+.portada__bajada { max-width: 425px; color: #c2cfc7; font-size: 15px; }
+.portada__acciones { display: flex; align-items: center; gap: 16px; margin-top: 21px; }
+.portada__acciones > .btn { min-height: 42px; background: var(--oro-mesa); border-color: var(--oro-mesa); padding: 8px 16px; font-size: 14px; }
+.entrada-codigo { display: flex; min-height: 42px; overflow: hidden; border: 1px solid #627063; border-radius: var(--radio); background: #0b1411d9; }
+.entrada-codigo input, .entrada-codigo button { border: 0; background: transparent; color: var(--papel); font-size: 13px; }
+.entrada-codigo input { width: 128px; padding: 0 12px; letter-spacing: .07em; }
+.entrada-codigo input::placeholder { color: #bbc6bf; letter-spacing: 0; }
+.entrada-codigo button { padding: 0 12px; font-weight: 650; border-left: 1px solid #465247; }
+.entrada-codigo :focus-visible { outline-offset: -3px; }
+.directorio { margin-top: 32px; scroll-margin-top: 20px; }
+.directorio__titulo, .mesa-encabezado, .tablero__cabecera, .tablero__pie, .saldo-panel { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
+.directorio__titulo { margin-bottom: 16px; }
+.directorio h2 { display: flex; align-items: center; gap: 12px; margin-top: 4px; font-size: 34px; }
+.contador { padding: 2px 8px; border: 1px solid #6a6045; border-radius: 5px; background: #302d20; color: var(--oro-mesa); font: 650 12px/1.4 var(--fuente); letter-spacing: 0; }
+.directorio__panel { overflow: hidden; border: 1px solid var(--linea-salon); border-radius: 12px; background: var(--panel-salon); }
+.tabla-salas { width: 100%; border-collapse: collapse; text-align: left; }
+.tabla-salas th { padding: 10px 20px; color: #aab9ac; background: #202b24; font-size: 10px; font-weight: 650; text-transform: uppercase; letter-spacing: .14em; }
+.tabla-salas td { padding: 12px 20px; border-top: 1px solid var(--linea-salon); }
+.tabla-salas td:first-child { width: 36%; }
+.tabla-salas td:nth-child(2) { width: 27%; }
+.tabla-salas td:last-child { text-align: right; }
+.tabla-salas tr:hover td { background: #1d2922; }
+.juego-directorio, .persona-directorio, .cupos, .ocupacion, .salir-mesa { display: flex; align-items: center; gap: 12px; }
+.juego-directorio img { width: 72px; height: 46px; object-fit: cover; border-radius: 6px; border: 1px solid #59503b; }
+.juego-directorio strong, .juego-directorio small { display: block; }
+.juego-directorio strong { color: var(--papel); font-size: 16px; }
+.juego-directorio small { font: 600 10px/1.5 ui-monospace, monospace; color: var(--gris-salon); text-transform: uppercase; letter-spacing: .1em; }
+.persona-directorio { color: #d8e2db; font-size: 14px; gap: 9px; overflow-wrap: anywhere; }
+.inicial { display: grid; flex: none; width: 28px; height: 28px; place-items: center; border: 1px solid #516152; border-radius: 50%; background: #2b3b31; color: #c3d4c3; font: 600 14px var(--serif); }
+.cupos { align-items: flex-start; flex-direction: column; gap: 4px; font: 650 14px ui-monospace, monospace; }
+.cupos__marcas { display: flex; gap: 3px; }
+.cupos__marcas i { display: block; width: 8px; height: 4px; background: #415045; border-radius: 1px; }
+.cupos__marcas i.ocupada { background: #91c8a4; }
+.entrar-mesa { min-height: 34px; padding: 7px 14px; border: 1px solid #536e5c; background: #23372b; color: #d2e7d6; font-size: 13px; }
+.entrar-mesa:hover { border-color: #a1bc95; }
+.directorio__aviso { display: flex; align-items: center; justify-content: center; gap: 16px; min-height: 112px; padding: 20px; }
+.directorio__icono { width: 44px; height: 44px; padding: 9px; border: 1px solid #5e5c42; border-radius: 10px; color: var(--oro-mesa); background: #2a3024; }
+.directorio__aviso p, .nota-directorio, .nota-ronda { color: var(--gris-salon); font-size: 13px; }
+.nota-directorio { margin-top: 9px; font-size: 12px; }
+.nota-directorio span { color: var(--oro-mesa); }
+.juegos { margin-top: 42px; }
+.juegos__cabecera h2 { margin-top: 3px; color: var(--papel); font: 500 29px/1.2 var(--serif); letter-spacing: -.035em; }
+.juegos__cabecera .eyebrow { color: #a7c8b5; font-size: 10px; }
+.juego-card { background: var(--panel-salon); border-color: var(--linea-salon); }
+
+/* La mesa vive en la página del perfil: el cambio de vista no cierra el socket. */
+.contenido--perfil:has(#vista-mesa:not([hidden])) { padding-top: 28px; padding-bottom: 32px; }
+.mesa-encabezado { margin-bottom: 21px; }
+.mesa-encabezado h1 { margin-top: 6px; font-size: 44px; }
+.mesa-encabezado h1:focus { outline: none; }
+.mesa-acceso { display: flex; align-items: center; gap: 14px; }
+.mesa-acceso b { margin-left: 5px; color: var(--oro-mesa); font: 650 16px ui-monospace, monospace; letter-spacing: .12em; }
+.mesa-acceso a, .salir-mesa { color: #bcc9bd; font-size: 13px; text-underline-offset: 4px; }
+#estado-copia:not(:empty) { margin: -10px 0 12px; color: var(--gris-salon); font-size: 13px; text-align: right; }
+.mesa-layout { display: grid; grid-template-columns: minmax(0, 2.4fr) minmax(278px, 1fr); gap: 20px; align-items: stretch; }
+.tablero, .caja-apuesta { min-width: 0; border: 1px solid var(--linea-salon); border-radius: 16px; background: var(--panel-salon); box-shadow: 0 16px 38px #0003; }
+.tablero { display: flex; flex-direction: column; overflow: hidden; background: radial-gradient(ellipse at 50% 45%, #283d2c, #141e19 76%); }
+.tablero__cabecera { padding: 18px 22px; }
+.ronda-tag { border: 1px solid #8a714c; border-radius: 4px; color: var(--oro-mesa); padding: 4px 10px; font: 700 10px/1.4 var(--fuente); text-transform: uppercase; letter-spacing: .15em; }
+.ocupacion { gap: 7px; color: #c2cfc3; font-size: 13px; }
+.pano { position: relative; isolation: isolate; display: grid; flex: 1; margin: 8px 15px 18px; min-height: 300px; }
+.pano::before, .pano::after { position: absolute; z-index: -1; content: ''; border-radius: 999px; }
+.pano::before { inset: 14px 2px; border: 5px solid #483a2d; outline: 1px solid #a38c5b; background: repeating-linear-gradient(55deg, transparent 0 3px, #d6dcc403 3px 4px), radial-gradient(ellipse at 50% 28%, #235344, #0c362b 72%, #09241d); box-shadow: inset 0 0 0 1px #b09a65, inset 0 0 20px #0007, 0 9px 18px #0006; }
+.pano::after { inset: 31px 21px; border: 1px solid #ccb97656; box-shadow: inset 0 0 0 3px #c8c19108; }
+.asientos { grid-area: 1/1; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); grid-template-rows: auto minmax(158px, 1fr) auto; column-gap: 10px; margin: 0; padding: 0 4.5%; list-style: none; }
+.asiento { display: flex; gap: 8px; align-items: center; justify-self: center; width: min(100%, 180px); min-width: 0; min-height: 54px; padding: 8px 10px; border: 1px solid #607466; border-radius: 11px; background: #1b2c23; box-shadow: 0 4px 12px #0005; }
+.asiento:nth-child(n+4) { grid-row: 3; }
+.asiento--propio { border-color: #c6a665; background: #303426; }
+.asiento--libre { border: 1px dashed #56665a; color: #a8b6ab; background: #19241d; box-shadow: none; }
+.asiento__avatar { display: grid; flex: none; width: 32px; height: 32px; place-items: center; border: 1px solid #647161; border-radius: 50%; background: #304235; font-size: 21px; line-height: 1; }
+.asiento--propio .asiento__avatar { border-color: #9c8856; background: #49422b; }
+.asiento--libre .asiento__avatar { border: 1px dashed #546559; color: #9bad9f; background: none; font-size: 15px; }
+.asiento div { min-width: 0; }
+.asiento small, .asiento strong { display: block; }
+.asiento small { color: #b2c2b4; font-size: 9px; font-weight: 650; letter-spacing: .08em; text-transform: uppercase; }
+.asiento--propio small { color: var(--oro-mesa); }
+.asiento strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; }
+.centro-juego { grid-area: 1/1; align-self: center; justify-self: center; max-width: 82%; text-align: center; overflow-wrap: anywhere; }
+.centro-juego__emblema { width: 40px; height: 40px; margin-bottom: 3px; color: #ddc185; stroke-width: 1.2; }
+.centro-juego h2 { margin: 4px 0 6px; font-size: clamp(24px, 2.45vw, 36px); }
+#detalle-ronda { color: #c4d9c9; font-size: 13px; }
+.cartas-mesa { padding: 7px 12px; color: var(--oro-mesa); background: #14271b; font-size: 14px; font-weight: 600; text-align: center; }
+.tablero__pie { min-height: 75px; padding: 14px 22px; background: #19251e; border-top: 1px solid var(--linea-salon); }
+.tablero__pie strong { font-size: 14px; overflow-wrap: anywhere; }
+.btn--mesa { min-height: 38px; padding: 8px 18px; color: var(--oro-mesa); background: #333426; border: 1px solid #8d7a4e; font-size: 14px; }
+.caja-apuesta { overflow: hidden; }
+.saldo-panel { padding: 20px 22px 14px; border-bottom: 1px solid #5f573c; background: linear-gradient(105deg, #302f22, #272b20 70%); }
+.saldo-panel svg { width: 38px; height: 38px; color: var(--oro-mesa); stroke-width: 1.2; }
+.saldo { margin-top: 3px; color: #d1c8af; font-size: 13px; }
+.saldo strong { color: var(--papel); font: 500 37px/1.2 var(--serif); letter-spacing: -.035em; font-variant-numeric: tabular-nums; }
+#formulario-apuesta { padding: 18px 22px 17px; }
+.caja-apuesta h2 { margin-bottom: 14px; font-size: 25px; }
+#controles-apuesta { display: grid; min-width: 0; gap: 10px; margin: 0; padding: 0; border: none; }
+#controles-apuesta .campo { gap: 4px; }
+#controles-apuesta label { color: #d4dfd7; font-size: 13px; font-weight: 600; }
+#controles-apuesta input, #controles-apuesta select { min-height: 39px; padding: 6px 10px; border-color: #536056; background: #101a15; font-size: 14px; }
+#controles-apuesta input[aria-invalid='true'] { border-color: var(--peligro); }
+.montos-rapidos { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+.montos-rapidos button { border: 1px solid #526353; border-radius: 6px; color: #d8e5db; background: #243227; padding: 4px; font-size: 12px; font-weight: 650; }
+.montos-rapidos .elegido { color: var(--oro-mesa); border-color: #ad965f; background: #363627; }
+#confirmar-apuesta { min-height: 42px; margin-top: 4px; justify-content: space-between; padding: 9px 14px; font-size: 14px; }
+#confirmar-apuesta:disabled { border-color: #4a594e; background: #313d34; color: #b2bfb5; opacity: 1; }
+#confirmar-apuesta.confirmada { border-color: #54735b; background: #253b2d; color: #c3ddc8; }
+#controles-apuesta :disabled:not(.btn) { opacity: .58; cursor: not-allowed; }
+#ayuda-apuesta { margin-top: 9px; min-height: 2.8em; color: #bac8be; font-size: 12px; line-height: 1.4; }
+#ayuda-apuesta.atencion { color: #ffae9f; }
+.salir-mesa { width: fit-content; gap: 7px; margin-top: 18px; text-decoration: none; }
+@media (max-width: 1130px) {
+  .mesa-layout { gap: 14px; }
+  .asientos { padding: 0 2%; column-gap: 6px; }
+  .asiento { padding-inline: 7px; }
+  .tablero__cabecera, .tablero__pie { padding-inline: 16px; }
+}
+
+/* El turno y la liquidación se leen también en los asientos cuando está abierto el chat. */
+.asiento--turno { position: relative; border: 2px solid #a4dfb6; padding: 7px 9px; box-shadow: 0 0 0 3px #183f2c, 0 0 0 4px #86b596; }
+.asiento__saldo { display: block; color: #c1cdc3; font-size: 11px; line-height: 1.3; }
+.marca-turno, .asiento__neto { display: block; font-size: 11px; font-weight: 650; line-height: 1.3; }
+.marca-turno { color: #c1f3d0; }
+.marca-turno::before { content: '› '; }
+[data-tono='positivo'] { color: #9ae1b2; }
+[data-tono='negativo'] { color: #ffb5a6; }
+[data-tono='neutro'] { color: #c1c9be; }
+.aviso-automatico { margin: 0; padding: 9px 16px; border-top: 1px solid var(--linea-salon); color: #ead8ad; background: #282b20; font-size: 13px; text-align: center; }
+.pieza-resultado {
+  display: grid; place-content: center; width: 52px; height: 52px; margin: 0 auto 7px; border: 2px solid #cda968; border-radius: 50%;
+  background: radial-gradient(circle at 30% 20%, #f3dba1, #c69b55 85%); color: #50381b;
+  box-shadow: inset 0 0 0 2px #8c713e, inset 0 0 0 4px #ddc38c, 0 4px 8px #0005;
+  font: bold 13px/1 var(--serif); letter-spacing: .04em; text-transform: uppercase;
+}
+.pieza-resultado[data-juego='coinflip']::before { content: '✦'; display: block; margin: 0 auto 2px; font-size: 12px; }
+.pieza-resultado[data-juego='dice'] { width: 45px; height: 45px; grid-template: repeat(3, 7px) / repeat(3, 7px); gap: 3px; border-radius: 9px; border-color: #d6c4a7; background: linear-gradient(130deg, #fff9e9, #deccb0); box-shadow: 2px 3px 0 #a58e6c, 0 5px 10px #0005; }
+.pieza-resultado .punto { border-radius: 50%; background: #383930; box-shadow: inset 0 1px 2px #0007; }
+.pieza-resultado[data-juego='roulette'] { background: #272c2b; color: var(--papel); box-shadow: inset 0 0 0 2px #1a241c, inset 0 0 0 3px #998553, 0 4px 8px #0005; font-size: 25px; }
+.pieza-resultado[data-color='rojo'] { background: #923e3a; }
+.pieza-resultado[data-color='verde'] { background: #255b40; }
+.pieza-resultado:is([data-juego='blackjack'], [data-juego='poker']) { width: 36px; height: 46px; border-radius: 5px; color: #a44a3c; background: #f2e8d1; border-color: #baaa89; box-shadow: 3px 3px 0 #8e7954, 0 4px 8px #0005; font-size: 23px; }
+.saltar-animacion { margin-top: 6px; border: 1px solid #7d9b87; border-radius: var(--radio-pill); padding: 4px 11px; color: #e9f3e9; background: #1b3a2e; font: 650 12px/1.3 var(--fuente); }
+.pano:has(#pieza-resultado:not([hidden])) { min-height: 320px; }
+.saltar-animacion kbd { margin-left: 3px; border-left: 1px solid #829889; padding-left: 6px; color: #c9d6ca; font-size: 10px; }
+.saltar-animacion:hover { border-color: var(--oro-mesa); }
+#estado-ronda:focus:not(:focus-visible) { outline: none; }
+
+.panel-tabs { display: flex; border-bottom: 1px solid var(--linea-salon); background: #151e19; }
+.panel-tabs button { display: flex; flex: 1; min-height: 41px; align-items: center; justify-content: center; gap: 7px; padding: 5px; border: 0; border-bottom: 2px solid transparent; color: #b0c0b5; background: transparent; font-size: 13px; font-weight: 650; }
+.panel-tabs button[aria-selected='true'] { border-bottom-color: var(--oro-mesa); color: var(--oro-mesa); background: #263029; }
+.panel-tabs button:focus-visible { outline-offset: -3px; }
+#no-leidos { border-radius: 20px; background: var(--oro-mesa); padding: 1px 5px; font: 700 10px var(--fuente); color: #29251c; }
+.balance-ronda { padding: 19px 18px 15px; }
+.balance-ronda h2 { margin: 4px 0; }
+.nota-balance { color: var(--gris-salon); font-size: 12px; line-height: 1.45; }
+.tabla-balance { width: 100%; margin-top: 16px; border-collapse: collapse; font-size: 13px; }
+.tabla-balance thead { background: #223027; color: #b2c4b5; font-size: 10px; text-transform: uppercase; letter-spacing: .1em; }
+.tabla-balance th, .tabla-balance td { padding: 9px 5px; text-align: right; }
+.tabla-balance th:first-child { text-align: left; }
+.tabla-balance tbody tr { border-bottom: 1px solid var(--linea-salon); }
+.tabla-balance tbody th { max-width: 135px; overflow-wrap: anywhere; }
+.tabla-balance strong, .tabla-balance small { display: block; }
+.tabla-balance small { color: var(--gris-salon); font-size: 11px; font-weight: 500; }
+.tabla-balance td { font-variant-numeric: tabular-nums; }
+.tabla-balance td:last-child { font-weight: 750; }
+.sello-acta { margin-top: 12px; color: var(--gris-salon); font-size: 11px; }
+.sello-acta span { color: var(--oro-mesa); }
+
+#panel-chat { padding: 16px; }
+.chat-cabecera, .chat-pie, .mensaje-chat > div { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+.chat-cabecera h2 { margin: 0; font-size: 23px; }
+.canal-sala { display: inline-flex; align-items: center; gap: 5px; color: #c0d4c6; font-size: 11px; }
+.canal-sala i { width: 6px; height: 6px; border-radius: 50%; background: #82ca9d; }
+.chat-registro { margin: 13px 0; height: 214px; overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: #496653 transparent; }
+#mensajes-chat { display: grid; gap: 8px; margin: 0; padding: 2px 4px 2px 1px; list-style: none; }
+.mensaje-chat { justify-self: start; max-width: 94%; min-width: 45%; padding: 8px 10px; border: 1px solid #39493f; border-radius: 2px 11px 11px; background: #232f27; }
+.mensaje-chat.propio { justify-self: end; border-color: #44654c; border-radius: 11px 2px 11px 11px; background: #283c2e; }
+.mensaje-chat > div { align-items: baseline; gap: 10px; }
+.mensaje-chat strong { color: #d6c697; font-size: 11px; overflow-wrap: anywhere; }
+.mensaje-chat.propio strong { color: #b1dbba; }
+.mensaje-chat time { color: #bcc6ba; font-size: 10px; font-variant-numeric: tabular-nums; }
+.mensaje-chat p { margin-top: 2px; color: #ecf0e9; font-size: 13px; line-height: 1.4; overflow-wrap: anywhere; white-space: pre-wrap; }
+.chat-vacio { display: grid; height: 100%; align-content: center; justify-items: center; gap: 4px; padding: 16px; border: 1px dashed #425247; border-radius: 10px; color: var(--gris-salon); text-align: center; font-size: 12px; }
+.chat-vacio strong { color: var(--papel); font: 500 19px var(--serif); }
+.chat-vacio .icono { width: 27px; height: 27px; margin-bottom: 3px; color: var(--oro-mesa); }
+.chat-compositor { display: flex; align-items: center; gap: 6px; padding: 4px; border: 1px solid #647767; border-radius: var(--radio); background: #101a15; }
+.chat-compositor:focus-within { border-color: var(--oro-mesa); }
+.chat-compositor input { min-width: 0; flex: 1; padding: 7px 5px; border: 0; background: transparent; color: var(--papel); font-size: 13px; }
+.chat-compositor input:focus-visible { outline-offset: -1px; }
+.chat-compositor button { display: grid; width: 34px; height: 32px; place-items: center; border: 1px solid #c4ad75; border-radius: 6px; background: var(--oro-mesa); color: #332d1c; }
+.chat-compositor button:disabled { border-color: #455349; background: #2c3930; color: #a9b9ad; }
+.chat-pie { padding: 6px 1px 0; color: var(--gris-salon); font-size: 11px; }
+.chat-pie kbd { padding: 0 3px; border: 1px solid #465449; border-radius: 3px; font-size: 10px; }
+#formulario-chat .campo__error:not([hidden]) { margin-top: 6px; }

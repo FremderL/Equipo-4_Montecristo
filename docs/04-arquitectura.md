@@ -45,7 +45,7 @@ el resultado de una ronda se genera una sola vez, en el servidor, y todos los cl
 | --- | --- | --- |
 | `GET` | `/` | Página principal (`index.html`) |
 | `GET` | `/sala/:codigo` | Enlace de invitación: abre el perfil con el código listo para entrar |
-| `GET` | `/api/salas` | Lista de salas activas con juego, fase y ocupación |
+| `GET` | `/api/salas` | Salas activas: `codigo`, `juego`, `anfitrion` (nombre actual), `fase`, `jugadores` y `capacidad`. El directorio muestra aquellas con `jugadores < capacidad`. |
 | `GET` | `/api/salas/:codigo` | Existe o no la sala y cuántos asientos libres tiene |
 | `GET` | `/health` | `{ "ok": true }` para verificar que el servidor vive |
 
@@ -71,14 +71,14 @@ el resultado de una ronda se genera una sola vez, en el servidor, y todos los cl
 | Evento | Cuándo | Datos |
 | --- | --- | --- |
 | `bienvenida` | Al conectarse el navegador | `{ mensaje, socketId, fecha }` (se imprime también en consola) |
-| `estado_sala` | Al entrar y después de **cada** cambio | Sala completa (`lib/salas.js`): `id`, `codigo`, `juego`, `estado`, `fase`, `anfitrionId`, `capacidad`, `asientosLibres`, `apuestaMinima`, `numeroRonda`, `jugadores` (en orden de `asiento` 1–6, con `fichas`, `esAnfitrion` y `conectado`), `apuestas`, `bote`, `turno`, `resultado` (`null` hasta que se lanza) y `motivo` (`creada` · `entrada` · `salida` · `apuesta` · `fase` · `turno` · `resultado` · `reconexion`) |
+| `estado_sala` | Al entrar y después de **cada** cambio | Sala completa (`lib/salas.js`): `id`, `codigo`, `juego`, `estado`, `fase`, `anfitrionId`, `capacidad`, `asientosLibres`, `apuestaMinima`, `numeroRonda`, `jugadores` (en orden de `asiento` 1–6, con `fichas`, `esAnfitrion` y `conectado`), `apuestas`, `bote`, `turno`, `resultado` (`null` hasta el lanzamiento o cierre de la mano) y `motivo` (`creada` · `entrada` · `salida` · `apuesta` · `fase` · `turno` · `resultado` · `reconexion`) |
 | `ronda_iniciada` | Al lanzar o repartir | `{ numeroRonda, juego }` |
 | `cartas` | Solo al dueño de esas cartas | `{ cartas: [...] }`; en blackjack incluye también `numeroRonda` y `puntos` |
-| `turno` | En blackjack y póker, al empezar cada turno y al cerrar la vuelta | `{ jugadorId, deadline, tiempoMs, segundosRestantes, posicion, total, activo }`; `jugadorId: null` cuando ya no hay turno |
-| `turno_automatico` | Cuando el reloj vence o el jugador se va en su turno | `{ jugadorId, nombre, accion, motivo, mensaje, numeroRonda }` |
+| `turno` | En blackjack y póker, al empezar cada turno y al cerrar la vuelta | `{ codigo, numeroRonda, jugadorId, deadline, tiempoMs, segundosRestantes, posicion, total, activo }`; `jugadorId: null` cuando ya no hay turno |
+| `turno_automatico` | Cuando el reloj vence o el jugador se va en su turno | `{ codigo, numeroRonda, jugadorId, nombre, accion, motivo, mensaje }` |
 | `apuesta_confirmada` | Al confirmar una apuesta | `{ jugadorId, nombre, monto, opcion }` |
-| `resultado` | Al liquidar | `{ juego, numeroRonda, resultado, apuestas: [{ jugadorId, nombre, monto, opcion, multiplicador, pago, neto, resultado }] }` |
-| `chat_mensaje` | Al escribir en el chat | `{ nombre, texto, hora }` |
+| `resultado` | Al liquidar o devolver la apuesta | `{ codigo, juego, numeroRonda, resultado, apuestas: [{ jugadorId, nombre, monto, opcion, multiplicador, pago, neto, resultado }] }` |
+| `chat_mensaje` | Al escribir en el chat | `{ codigo, jugadorId, nombre, texto, hora }` |
 | `error` | Cuando una acción se rechaza | `{ mensaje, codigo }` |
 | `sala_cerrada` | Cuando se va el último jugador o la sala se cierra | `{ codigo, motivo }` (`motivo: 'sala_vacia'`). Se manda al canal de la sala y al jugador que acaba de salir |
 
@@ -94,13 +94,30 @@ ocupar un solo asiento a la vez. Si el cliente omite `device_id`, el perfil qued
 **Reparto de blackjack.** Solo reciben `cartas` quienes confirmaron una apuesta. Todos ven
 `estado_sala.casa`: antes del reparto es `null`; durante el juego, por ejemplo,
 `{ cartas: ['A♥', null], puntos: 11 }`. El `null` representa la carta tapada y el puntaje se
-calcula solo con la visible. En `resultados` se muestran las dos cartas de la casa y su total.
+calcula solo con la visible. En `resultados` se muestran todas las cartas de la casa y su total.
 El mazo, la semilla y las manos de los demás jugadores no viajan en el estado público.
 
 **Resultado de un juego rápido.** En Cara o Cruz `resultado` es `{ lado: 'cara' }` o
-`{ lado: 'cruz' }`. Cada apuesta liquidada trae su `multiplicador`, el `pago` total (incluye lo
+`{ lado: 'cruz' }`; en Dados es `{ numero }` (1–6), y en Ruleta, `{ numero, color }` (0–36). Cada apuesta liquidada trae su `multiplicador`, el `pago` total (incluye lo
 apostado), el `neto` (lo que ganó o perdió) y `resultado: 'gana' | 'pierde' | 'empate'`. Las mismas
 apuestas, ya liquidadas, van en `estado_sala`; antes de lanzar esos cuatro campos valen `null`.
+
+**Cierre de cartas.** En blackjack, `resultado: { casa: { cartas, puntos } }` muestra la mano final
+de la casa; `apuestas` incluye el pago y el neto de cada jugador. En póker, mientras no haya
+showdown, se informa `resultado: { tipo: 'devolucion' }`. Cada apuesta incluye el `totalAportado` (entrada más fichas
+puestas en el turno), el `pago` efectivamente devuelto y el `neto`. El neto cero no representa
+una victoria de cartas. La apuesta de quien abandonó durante el juego no se reembolsa.
+
+**Avisos en la mesa.** `turno`, `turno_automatico` y `resultado` identifican sala y ronda.
+`estado_sala` conserva el turno, las acciones y la liquidación para quien entre después. Solo
+un `resultado` en vivo anima la pieza (1,400 ms), una vez por ronda. Saltar, cambiar de ronda
+o reducir el movimiento cancela el efecto local; nunca se retrasa el pago ni se manda otra jugada.
+
+**Chat.** El cliente manda solo `{ texto }` con Enter o el botón. El servidor recorta espacios,
+valida 1–200 caracteres y toma la identidad y sala del socket. `chat_mensaje` llega a esa sala,
+incluido el autor: ese eco, no el ack, crea la burbuja. Cada cliente mantiene los últimos 100
+mensajes recibidos durante su estancia, sin historial previo. Cambiar de ronda no borra el chat;
+cambiar de sala o desconectarse lo limpia, incluido el borrador.
 
 | Rechazo de `apostar` / `lanzar` | `error.codigo` |
 | --- | --- |
@@ -109,7 +126,7 @@ apuestas, ya liquidadas, van en `estado_sala`; antes de lanzar esos cuatro campo
 | Lanza alguien que no es el anfitrión | `SOLO_ANFITRION` |
 | Nadie confirmó una apuesta | `SIN_APOSTADORES` |
 | La ronda ya se lanzó (segundo `lanzar`) | `RONDA_LIQUIDADA` |
-| El juego de la sala no se lanza (blackjack, póker) o su motor aún no existe (dados) | `JUEGO_SIN_LANZAMIENTO` · `JUEGO_NO_DISPONIBLE` |
+| El juego de la sala no se lanza (blackjack, póker) | `JUEGO_SIN_LANZAMIENTO` |
 
 ---
 
@@ -133,16 +150,16 @@ Jugador A                Servidor                       Jugador B
    │◀──── estado_sala ───────│─────── estado_sala ──────────▶
 ```
 
-Así corren **Cara o Cruz** y **Ruleta**: al recibir `lanzar`, `lib/lanzamiento.js` recorre el
+Así corren **Cara o Cruz, Dados y Ruleta**: al recibir `lanzar`, `lib/lanzamiento.js` recorre el
 motor de fases (`apuestas → jugando → resultados`) en un solo paso y delega el lanzamiento y
-los multiplicadores a `lib/juegos/coinflip.js` o `lib/juegos/roulette.js`. Antes de `resultado`
+los multiplicadores al motor correspondiente de `lib/juegos/`. Antes de `resultado`
 se emite `ronda_iniciada`. La ronda es todo o nada: si algo falla antes de pagar, la sala sigue
-intacta en `apuestas`. Dados usará el mismo camino cuando se registre su motor en `server.js`.
+intacta en `apuestas`.
 
 En **blackjack** y **póker** el mismo esquema se repite por turno: el servidor manda `turno`,
 espera la acción (o vence el reloj), aplica la jugada y vuelve a difundir `estado_sala`.
-También guarda los saldos cuando termina la mano, aunque el motor provisional solo devuelva
-lo apostado.
+También guarda los saldos cuando termina la mano, tras liquidar contra la casa (blackjack)
+o devolver las aportaciones no abandonadas (póker).
 
 ---
 
